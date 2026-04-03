@@ -9,6 +9,8 @@ packages = [{include = "modules"}]
 python = "^3.12"
 aws-lambda-powertools = {extras = ["all"], version = "*"}
 psycopg = {extras = ["binary"], version = "*"}
+alembic = "^1.18.4"
+sqlalchemy = "^2.0.48"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "*"
