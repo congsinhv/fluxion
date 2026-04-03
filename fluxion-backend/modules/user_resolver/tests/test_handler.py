@@ -9,6 +9,7 @@ with patch.dict("os.environ", {
     "POWERTOOLS_SERVICE_NAME": "test",
     "POWERTOOLS_TRACE_DISABLED": "1",
     "COGNITO_USER_POOL_ID": "us-east-1_TestPool",
+    "AWS_DEFAULT_REGION": "ap-southeast-1",
 }):
     from db import DBConnection
     from handler import app
