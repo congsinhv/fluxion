@@ -47,8 +47,19 @@ module "auth" {
 }
 
 module "api" {
-  source      = "./modules/api"
-  environment = var.environment
+  source               = "./modules/api"
+  environment          = var.environment
+  region               = var.region
+  cognito_user_pool_id = module.auth.user_pool_id
+  schema_path          = "${path.root}/../schema.graphql"
+
+  # Lambda ARNs — uncomment when compute module is ready (#34-36)
+  # device_resolver_arn   = module.compute.device_resolver_arn
+  # platform_resolver_arn = module.compute.platform_resolver_arn
+  # user_resolver_arn     = module.compute.user_resolver_arn
+  # action_resolver_arn   = module.compute.action_resolver_arn
+  # upload_resolver_arn   = module.compute.upload_resolver_arn
+  # chat_resolver_arn     = module.compute.chat_resolver_arn
 }
 
 module "compute" {
