@@ -29,3 +29,15 @@ resource "aws_ssm_parameter" "db_secret_arn" {
   type  = "String"
   value = module.database.db_secret_arn
 }
+
+resource "aws_ssm_parameter" "cognito_user_pool_id" {
+  name  = "/fluxion/auth/user_pool_id"
+  type  = "String"
+  value = module.auth.user_pool_id
+}
+
+resource "aws_ssm_parameter" "cognito_client_id" {
+  name  = "/fluxion/auth/client_id"
+  type  = "String"
+  value = module.auth.client_id
+}
