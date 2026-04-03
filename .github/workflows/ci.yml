@@ -24,7 +24,11 @@ jobs:
       - name: Lint
         run: poetry run ruff check .
       - name: Test
-        run: poetry run pytest
+        run: |
+          for module in modules/*/tests; do
+            echo "=== Testing $(dirname $module) ==="
+            poetry run pytest "$module" -v
+          done
 
   oem-lint-test:
     runs-on: ubuntu-latest

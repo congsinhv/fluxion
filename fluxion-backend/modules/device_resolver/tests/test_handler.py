@@ -1,17 +1,18 @@
 """Tests for device_resolver handler — mock DBConnection, test resolver logic."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 # Mock config before importing handler (Lambda Powertools needs env vars)
 with patch.dict("os.environ", {"POWERTOOLS_SERVICE_NAME": "test", "POWERTOOLS_TRACE_DISABLED": "1"}):
+    from db import DBConnection
     from handler import app
 
 
 TENANT = "test_tenant"
-NOW = datetime(2026, 1, 1, tzinfo=timezone.utc)
+NOW = datetime(2026, 1, 1, tzinfo=UTC)
 
 MOCK_DEVICE_ROW = {
     "id": "d-001",
@@ -65,7 +66,7 @@ def _make_appsync_event(field_name: str, arguments: dict, type_name: str = "Quer
 
 
 class TestGetDevice:
-    @patch("handler.DBConnection.get_device_by_id")
+    @patch.object(DBConnection, "get_device_by_id")
     def test_returns_formatted_device(self, mock_get):
         mock_get.return_value = MOCK_DEVICE_ROW
         event = _make_appsync_event("getDevice", {"id": "d-001"})
@@ -78,7 +79,7 @@ class TestGetDevice:
         assert result["tokens"]["topic"] == "com.apple.mgmt"
         mock_get.assert_called_once_with(schema_name=TENANT, device_id="d-001")
 
-    @patch("handler.DBConnection.get_device_by_id")
+    @patch.object(DBConnection, "get_device_by_id")
     def test_raises_not_found(self, mock_get):
         mock_get.return_value = None
         event = _make_appsync_event("getDevice", {"id": "nonexistent"})
@@ -88,8 +89,8 @@ class TestGetDevice:
 
 
 class TestListDevices:
-    @patch("handler.DBConnection.count_devices")
-    @patch("handler.DBConnection.list_devices")
+    @patch.object(DBConnection, "count_devices")
+    @patch.object(DBConnection, "list_devices")
     def test_returns_paginated_list(self, mock_list, mock_count):
         mock_list.return_value = [MOCK_DEVICE_ROW]  # 1 row, no hasMore
         mock_count.return_value = 1
@@ -100,8 +101,8 @@ class TestListDevices:
         assert result["nextToken"] is None
         assert result["totalCount"] == 1
 
-    @patch("handler.DBConnection.count_devices")
-    @patch("handler.DBConnection.list_devices")
+    @patch.object(DBConnection, "count_devices")
+    @patch.object(DBConnection, "list_devices")
     def test_has_next_page(self, mock_list, mock_count):
         # Return limit+1 rows to indicate more pages
         rows = [MOCK_DEVICE_ROW] * 3
@@ -114,8 +115,8 @@ class TestListDevices:
         assert result["nextToken"] is not None
         assert result["totalCount"] == 10
 
-    @patch("handler.DBConnection.count_devices")
-    @patch("handler.DBConnection.list_devices")
+    @patch.object(DBConnection, "count_devices")
+    @patch.object(DBConnection, "list_devices")
     def test_limit_capped_at_max(self, mock_list, mock_count):
         mock_list.return_value = []
         mock_count.return_value = 0
@@ -128,7 +129,7 @@ class TestListDevices:
 
 
 class TestGetDeviceHistory:
-    @patch("handler.DBConnection.get_device_history")
+    @patch.object(DBConnection, "get_device_history")
     def test_returns_milestones(self, mock_history):
         milestone_row = {
             "id": "m-001",
@@ -152,8 +153,8 @@ class TestGetDeviceHistory:
 
 
 class TestListAvailableActions:
-    @patch("handler.DBConnection.list_available_actions")
-    @patch("handler.DBConnection.get_device_by_id")
+    @patch.object(DBConnection, "list_available_actions")
+    @patch.object(DBConnection, "get_device_by_id")
     def test_returns_actions_for_device_state(self, mock_get, mock_actions):
         mock_get.return_value = {"state_id": 1, "id": "d-001"}
         action_row = {
@@ -176,7 +177,7 @@ class TestListAvailableActions:
         assert result[0]["name"] == "Lock"
         mock_actions.assert_called_once_with(schema_name=TENANT, device_state_id=1)
 
-    @patch("handler.DBConnection.get_device_by_id")
+    @patch.object(DBConnection, "get_device_by_id")
     def test_raises_not_found_for_missing_device(self, mock_get):
         mock_get.return_value = None
         event = _make_appsync_event("listAvailableActions", {"deviceId": "nonexistent"})

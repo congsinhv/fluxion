@@ -1,6 +1,6 @@
 """Tests for user_resolver handler — mock DBConnection + Cognito, test resolver logic."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -10,10 +10,12 @@ with patch.dict("os.environ", {
     "POWERTOOLS_TRACE_DISABLED": "1",
     "COGNITO_USER_POOL_ID": "us-east-1_TestPool",
 }):
+    from db import DBConnection
     from handler import app
+    import handler as handler_module
 
 TENANT = "test_tenant"
-NOW = datetime(2026, 1, 1, tzinfo=timezone.utc)
+NOW = datetime(2026, 1, 1, tzinfo=UTC)
 
 MOCK_USER_ROW = {
     "id": "u-001",
@@ -44,7 +46,7 @@ def _make_event(field_name: str, arguments: dict, type_name: str = "Query", role
 
 
 class TestMe:
-    @patch("handler.DBConnection.get_user_by_cognito_sub")
+    @patch.object(DBConnection, "get_user_by_cognito_sub")
     def test_returns_current_user(self, mock_get):
         mock_get.return_value = MOCK_USER_ROW
         result = app.resolve(_make_event("me", {}), MagicMock())
@@ -54,7 +56,7 @@ class TestMe:
         assert result["role"] == "ADMIN"  # uppercased by format_user
         mock_get.assert_called_once_with(schema_name=TENANT, cognito_sub="cognito-sub-001")
 
-    @patch("handler.DBConnection.get_user_by_cognito_sub")
+    @patch.object(DBConnection, "get_user_by_cognito_sub")
     def test_raises_not_found(self, mock_get):
         mock_get.return_value = None
         with pytest.raises(Exception, match="not found"):
@@ -62,7 +64,7 @@ class TestMe:
 
 
 class TestGetUser:
-    @patch("handler.DBConnection.get_user_by_id")
+    @patch.object(DBConnection, "get_user_by_id")
     def test_returns_user(self, mock_get):
         mock_get.return_value = MOCK_USER_ROW
         result = app.resolve(_make_event("getUser", {"id": "u-001"}), MagicMock())
@@ -70,7 +72,7 @@ class TestGetUser:
         assert result["id"] == "u-001"
         assert result["name"] == "Test Admin"
 
-    @patch("handler.DBConnection.get_user_by_id")
+    @patch.object(DBConnection, "get_user_by_id")
     def test_raises_not_found(self, mock_get):
         mock_get.return_value = None
         with pytest.raises(Exception, match="not found"):
@@ -78,8 +80,8 @@ class TestGetUser:
 
 
 class TestListUsers:
-    @patch("handler.DBConnection.count_users")
-    @patch("handler.DBConnection.list_users")
+    @patch.object(DBConnection, "count_users")
+    @patch.object(DBConnection, "list_users")
     def test_returns_paginated_list(self, mock_list, mock_count):
         mock_list.return_value = [MOCK_USER_ROW]
         mock_count.return_value = 1
@@ -89,8 +91,8 @@ class TestListUsers:
         assert result["nextToken"] is None
         assert result["totalCount"] == 1
 
-    @patch("handler.DBConnection.count_users")
-    @patch("handler.DBConnection.list_users")
+    @patch.object(DBConnection, "count_users")
+    @patch.object(DBConnection, "list_users")
     def test_limit_capped(self, mock_list, mock_count):
         mock_list.return_value = []
         mock_count.return_value = 0
@@ -104,7 +106,7 @@ class TestListUsers:
 
 
 class TestCreateUser:
-    @patch("handler.DBConnection.create_user")
+    @patch.object(DBConnection, "create_user")
     @patch("handler.cognito_client")
     def test_creates_cognito_and_db_user(self, mock_cognito, mock_create):
         mock_cognito.admin_create_user.return_value = {
@@ -152,7 +154,7 @@ class TestCreateUser:
 
 class TestUpdateUser:
     @patch("handler.cognito_client")
-    @patch("handler.DBConnection.update_user")
+    @patch.object(DBConnection, "update_user")
     def test_updates_user_and_syncs_role(self, mock_update, mock_cognito):
         mock_update.return_value = {
             **MOCK_USER_ROW,
@@ -168,7 +170,7 @@ class TestUpdateUser:
         # Verify Cognito role sync was called
         mock_cognito.admin_update_user_attributes.assert_called_once()
 
-    @patch("handler.DBConnection.update_user")
+    @patch.object(DBConnection, "update_user")
     def test_raises_not_found(self, mock_update):
         mock_update.return_value = None
         with pytest.raises(Exception, match="not found"):
@@ -180,6 +182,9 @@ class TestUpdateUser:
     def test_forbidden_for_operator(self):
         with pytest.raises(Exception, match="ADMIN"):
             app.resolve(
-                _make_event("updateUser", {"id": "u-001", "input": {"name": "X"}}, type_name="Mutation", role="OPERATOR"),
+                _make_event(
+                    "updateUser", {"id": "u-001", "input": {"name": "X"}},
+                    type_name="Mutation", role="OPERATOR",
+                ),
                 MagicMock(),
             )

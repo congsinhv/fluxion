@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 with patch.dict("os.environ", {"POWERTOOLS_SERVICE_NAME": "test", "POWERTOOLS_TRACE_DISABLED": "1"}):
+    from db import DBConnection
     from handler import app
 
 TENANT = "test_tenant"
@@ -27,7 +28,7 @@ def _make_event(field_name: str, arguments: dict, type_name: str = "Query", role
 
 
 class TestListStates:
-    @patch("handler.DBConnection.list_states")
+    @patch.object(DBConnection, "list_states")
     def test_returns_states(self, mock_list):
         mock_list.return_value = [{"id": 1, "name": "Enrolled"}, {"id": 2, "name": "Locked"}]
         result = app.resolve(_make_event("listStates", {}), MagicMock())
@@ -38,18 +39,19 @@ class TestListStates:
 
 
 class TestListPolicies:
-    @patch("handler.DBConnection.list_policies")
+    @patch.object(DBConnection, "list_policies")
     def test_returns_policies_with_state(self, mock_list):
-        mock_list.return_value = [
-            {"id": 1, "name": "Default", "state_id": 1, "service_type_id": 1, "color": "00FF00", "state_name": "Enrolled"}
-        ]
+        mock_list.return_value = [{
+            "id": 1, "name": "Default", "state_id": 1,
+            "service_type_id": 1, "color": "00FF00", "state_name": "Enrolled",
+        }]
         result = app.resolve(_make_event("listPolicies", {}), MagicMock())
 
         assert len(result) == 1
         assert result[0]["stateId"] == 1
         assert result[0]["state"]["name"] == "Enrolled"
 
-    @patch("handler.DBConnection.list_policies")
+    @patch.object(DBConnection, "list_policies")
     def test_filters_by_service_type(self, mock_list):
         mock_list.return_value = []
         app.resolve(_make_event("listPolicies", {"serviceTypeId": 2}), MagicMock())
@@ -57,7 +59,7 @@ class TestListPolicies:
 
 
 class TestListActions:
-    @patch("handler.DBConnection.list_actions")
+    @patch.object(DBConnection, "list_actions")
     def test_returns_actions_with_policy(self, mock_list):
         mock_list.return_value = [
             {
@@ -75,7 +77,7 @@ class TestListActions:
 
 
 class TestListServices:
-    @patch("handler.DBConnection.list_services")
+    @patch.object(DBConnection, "list_services")
     def test_returns_services(self, mock_list):
         mock_list.return_value = [{"id": 1, "name": "MDM", "is_enabled": True}]
         result = app.resolve(_make_event("listServices", {}), MagicMock())
@@ -87,7 +89,7 @@ class TestListServices:
 
 
 class TestUpdateState:
-    @patch("handler.DBConnection.update_state")
+    @patch.object(DBConnection, "update_state")
     def test_updates_state(self, mock_update):
         mock_update.return_value = {"id": 1, "name": "NewName"}
         result = app.resolve(
@@ -98,7 +100,7 @@ class TestUpdateState:
         assert result == {"id": 1, "name": "NewName"}
         mock_update.assert_called_once_with(schema_name=TENANT, state_id=1, name="NewName")
 
-    @patch("handler.DBConnection.update_state")
+    @patch.object(DBConnection, "update_state")
     def test_raises_not_found(self, mock_update):
         mock_update.return_value = None
         with pytest.raises(Exception, match="not found"):
@@ -116,7 +118,7 @@ class TestUpdateState:
 
 
 class TestUpdatePolicy:
-    @patch("handler.DBConnection.update_policy")
+    @patch.object(DBConnection, "update_policy")
     def test_updates_policy(self, mock_update):
         mock_update.return_value = {"id": 1, "name": "Updated", "state_id": 1, "service_type_id": 1, "color": "0000FF"}
         result = app.resolve(
@@ -128,7 +130,7 @@ class TestUpdatePolicy:
 
 
 class TestUpdateService:
-    @patch("handler.DBConnection.update_service")
+    @patch.object(DBConnection, "update_service")
     def test_updates_service(self, mock_update):
         mock_update.return_value = {"id": 1, "name": "MDM", "is_enabled": False}
         result = app.resolve(
