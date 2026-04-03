@@ -12,7 +12,6 @@ with patch.dict("os.environ", {
 }):
     from db import DBConnection
     from handler import app
-    import handler as handler_module
 
 TENANT = "test_tenant"
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
