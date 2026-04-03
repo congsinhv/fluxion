@@ -1,0 +1,135 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+env:
+  AWS_REGION: ap-southeast-1
+
+jobs:
+  lint-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - service: fluxion-backend
+            lang: python
+          - service: fluxion-oem-processor
+            lang: python
+          - service: fluxion-frontend
+            lang: bun
+    steps:
+      - uses: actions/checkout@v4
+
+      # Python services
+      - if: matrix.lang == 'python'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - if: matrix.lang == 'python'
+        run: pip install poetry
+      - if: matrix.lang == 'python'
+        working-directory: ${{ matrix.service }}
+        run: poetry install
+      - if: matrix.lang == 'python'
+        working-directory: ${{ matrix.service }}
+        run: poetry run ruff check .
+      - if: matrix.lang == 'python'
+        working-directory: ${{ matrix.service }}
+        run: poetry run pytest
+
+      # Bun/frontend service
+      - if: matrix.lang == 'bun'
+        uses: oven-sh/setup-bun@v2
+      - if: matrix.lang == 'bun'
+        working-directory: ${{ matrix.service }}
+        run: bun install --frozen-lockfile
+      - if: matrix.lang == 'bun'
+        working-directory: ${{ matrix.service }}
+        run: bun run lint
+      - if: matrix.lang == 'bun'
+        working-directory: ${{ matrix.service }}
+        run: bun run build
+      - if: matrix.lang == 'bun'
+        working-directory: ${{ matrix.service }}
+        run: bun run test -- --run
+
+  terraform:
+    needs: lint-test
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      max-parallel: 1
+      matrix:
+        service:
+          - fluxion-backend/infra
+          - fluxion-oem-processor/infra
+          - fluxion-frontend/infra
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - working-directory: ${{ matrix.service }}
+        run: terraform init
+
+      - working-directory: ${{ matrix.service }}
+        run: terraform plan -out=tfplan
+
+      - working-directory: ${{ matrix.service }}
+        run: terraform apply -auto-approve tfplan
+
+  docker-push:
+    needs: terraform
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      matrix:
+        include:
+          - service: fluxion-backend
+            modules: >-
+              device_resolver
+              action_resolver
+              platform_resolver
+              user_resolver
+              upload_resolver
+              chat_resolver
+              action_trigger
+              upload_processor
+              checkin_handler
+          - service: fluxion-oem-processor
+            modules: apple_process_action
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: ecr-login
+
+      - name: Build and push Docker images
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+        run: |
+          for module in ${{ matrix.modules }}; do
+            if [ "${{ matrix.service }}" = "fluxion-backend" ]; then
+              ctx="${{ matrix.service }}/modules/${module}"
+            else
+              ctx="${{ matrix.service }}/${module}"
+            fi
+            image="${ECR_REGISTRY}/fluxion-${module}:${GITHUB_SHA::7}"
+            docker build -t "${image}" "${ctx}"
+            docker push "${image}"
+          done
