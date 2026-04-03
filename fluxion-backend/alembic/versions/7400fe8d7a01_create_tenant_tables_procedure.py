@@ -1,21 +1,19 @@
 """create tenant tables procedure
 
 Revision ID: 7400fe8d7a01
-Revises: 
+Revises:
 Create Date: 2026-04-03 15:13:01.802260
 
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 from alembic import op
-import sqlalchemy as sa
-
 
 # revision identifiers, used by Alembic.
 revision: str = '7400fe8d7a01'
-down_revision: Union[str, None] = None
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = None
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
