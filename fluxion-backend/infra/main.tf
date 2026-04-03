@@ -34,8 +34,11 @@ module "network" {
 }
 
 module "database" {
-  source      = "./modules/database"
-  environment = var.environment
+  source             = "./modules/database"
+  environment        = var.environment
+  private_subnet_ids = module.network.private_subnet_ids
+  rds_sg_id          = module.network.rds_sg_id
+  db_password        = var.db_password
 }
 
 module "auth" {
