@@ -5,16 +5,19 @@ locals {
   # Map: "Type.field" → datasource key
   lambda_resolvers = {
     # device resolver
-    "Query.getDevice"   = "device"
-    "Query.listDevices" = "device"
-    # platform resolver
-    "Query.getDeviceStats"       = "platform"
-    "Query.listActionExecutions" = "platform"
-    "Query.listMilestones"       = "platform"
-    "Query.listStates"           = "platform"
-    "Query.listPolicies"         = "platform"
-    "Query.listActions"          = "platform"
-    "Query.listServices"         = "platform"
+    "Query.getDevice"            = "device"
+    "Query.listDevices"          = "device"
+    "Query.getDeviceHistory"     = "device"
+    "Query.listAvailableActions" = "device"
+    # platform resolver (config queries + mutations)
+    "Query.listStates"        = "platform"
+    "Query.listPolicies"      = "platform"
+    "Query.listActions"       = "platform"
+    "Query.listServices"      = "platform"
+    "Mutation.updateState"    = "platform"
+    "Mutation.updatePolicy"   = "platform"
+    "Mutation.updateAction"   = "platform"
+    "Mutation.updateService"  = "platform"
     # user resolver
     "Query.getUser"       = "user"
     "Query.listUsers"     = "user"

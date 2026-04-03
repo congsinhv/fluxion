@@ -30,10 +30,10 @@ select = ["E", "F", "I", "N", "W", "UP"]
 "alembic/versions/*.py" = ["E501"]
 
 [tool.pytest.ini_options]
-testpaths = ["modules"]
 python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
+# Each Lambda module has identically-named files (db.py, handler.py) — run per-module to avoid collisions
 
 [build-system]
 requires = ["poetry-core"]
