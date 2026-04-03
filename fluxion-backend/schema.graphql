@@ -1,6 +1,7 @@
 # Fluxion MDM — AppSync GraphQL Schema
-# Full implementation: issue #33
 # Reference: https://github.com/congsinhv/fluxion/wiki/T5-—-Định-nghĩa-API-Contract-(GraphQL-Schema)
+
+# ─── Enums ───────────────────────────────────────────────────────────────────────
 
 enum UserRole {
   ADMIN
@@ -19,14 +20,309 @@ enum ChatMessageRole {
   TOOL
 }
 
-type Query {
-  _placeholder: String
+# ─── Core Types ──────────────────────────────────────────────────────────────────
+
+type State {
+  id: Int!
+  name: String!
 }
+
+type Service {
+  id: Int!
+  name: String!
+  isEnabled: Boolean!
+}
+
+type Policy {
+  id: Int!
+  name: String!
+  stateId: Int!
+  state: State!
+  serviceTypeId: Int!
+  color: String
+}
+
+type Action {
+  id: ID!
+  name: String!
+  actionTypeId: Int!
+  fromStateId: Int
+  fromState: State
+  serviceTypeId: Int
+  applyPolicyId: Int!
+  applyPolicy: Policy!
+  configuration: AWSJSON
+}
+
+# ─── Device Types ────────────────────────────────────────────────────────────────
+
+type Device {
+  id: ID!
+  stateId: Int!
+  state: State!
+  currentPolicyId: Int
+  currentPolicy: Policy
+  assignedActionId: ID
+  createdAt: AWSDateTime!
+  updatedAt: AWSDateTime!
+  information: DeviceInformation
+  tokens: DeviceToken
+}
+
+type DeviceInformation {
+  id: ID!
+  deviceId: ID!
+  serialNumber: String!
+  udid: String!
+  name: String
+  model: String
+  osVersion: String
+  batteryLevel: Float
+  wifiMac: String
+  isSupervised: Boolean
+  lastCheckinAt: AWSDateTime
+  extFields: AWSJSON
+}
+
+type DeviceToken {
+  id: ID!
+  deviceId: ID!
+  topic: String!
+  updatedAt: AWSDateTime!
+}
+
+type DeviceConnection {
+  items: [Device!]!
+  nextToken: String
+  totalCount: Int
+}
+
+# ─── Execution & Tracking ────────────────────────────────────────────────────────
+
+type ActionExecution {
+  id: ID!
+  deviceId: ID!
+  device: Device
+  actionId: ID!
+  action: Action
+  commandUuid: ID!
+  status: ActionStatus!
+  createdAt: AWSDateTime!
+  updatedAt: AWSDateTime!
+  extFields: AWSJSON
+}
+
+type ActionExecutionConnection {
+  items: [ActionExecution!]!
+  nextToken: String
+  totalCount: Int
+}
+
+type Milestone {
+  id: ID!
+  deviceId: ID!
+  assignedActionId: ID
+  action: Action
+  policyId: Int
+  policy: Policy
+  createdAt: AWSDateTime!
+  extFields: AWSJSON
+}
+
+type MilestoneConnection {
+  items: [Milestone!]!
+  nextToken: String
+}
+
+# ─── User & Chat ─────────────────────────────────────────────────────────────────
+
+type User {
+  id: ID!
+  email: String!
+  name: String!
+  role: UserRole!
+  isActive: Boolean!
+  createdAt: AWSDateTime!
+  updatedAt: AWSDateTime!
+}
+
+type UserConnection {
+  items: [User!]!
+  nextToken: String
+  totalCount: Int
+}
+
+type ChatSession {
+  id: ID!
+  userId: ID!
+  createdAt: AWSDateTime!
+  updatedAt: AWSDateTime!
+  messages: [ChatMessage!]
+}
+
+type ChatMessage {
+  id: ID!
+  sessionId: ID!
+  role: ChatMessageRole!
+  content: String
+  toolCalls: AWSJSON
+  toolResult: AWSJSON
+  createdAt: AWSDateTime!
+}
+
+type ChatResponse {
+  message: ChatMessage!
+  session: ChatSession!
+}
+
+# ─── Statistics & Response Types ─────────────────────────────────────────────────
+
+type DeviceStats {
+  totalDevices: Int!
+  byState: [StateCount!]!
+}
+
+type StateCount {
+  state: String!
+  count: Int!
+}
+
+type UploadResult {
+  totalRequested: Int!
+  accepted: Int!
+  rejected: Int!
+  errors: [UploadError!]
+}
+
+type UploadError {
+  index: Int!
+  serialNumber: String
+  reason: String!
+}
+
+type ExecuteActionResponse {
+  executionId: ID!
+  commandUuid: ID!
+  status: ActionStatus!
+}
+
+type BulkActionResponse {
+  valid: [ExecuteActionResponse!]!
+  failed: [BulkActionError!]!
+}
+
+type BulkActionError {
+  deviceId: ID!
+  reason: String!
+}
+
+# ─── Input Types ─────────────────────────────────────────────────────────────────
+
+input DeviceFilter {
+  stateId: Int
+  policyId: Int
+  search: String
+}
+
+input UploadDeviceInput {
+  serialNumber: String!
+  udid: String!
+  name: String
+  model: String
+  osVersion: String
+}
+
+input ExecuteActionInput {
+  deviceId: ID!
+  actionId: ID!
+  configuration: AWSJSON
+}
+
+input BulkActionInput {
+  deviceIds: [ID!]!
+  actionId: ID!
+  configuration: AWSJSON
+}
+
+input SendChatMessageInput {
+  sessionId: ID
+  content: String!
+}
+
+input CreateUserInput {
+  email: String!
+  name: String!
+  role: UserRole!
+}
+
+input UpdateUserInput {
+  name: String
+  role: UserRole
+  isActive: Boolean
+}
+
+# ─── Queries ─────────────────────────────────────────────────────────────────────
+
+type Query {
+  # Device resolver
+  getDevice(id: ID!): Device
+  listDevices(filter: DeviceFilter, limit: Int = 20, nextToken: String): DeviceConnection!
+
+  # Platform resolver
+  getDeviceStats: DeviceStats!
+  listActionExecutions(
+    deviceId: ID
+    status: ActionStatus
+    limit: Int = 20
+    nextToken: String
+  ): ActionExecutionConnection!
+  listMilestones(deviceId: ID!, limit: Int = 20, nextToken: String): MilestoneConnection!
+
+  # Config queries (platform resolver)
+  listStates: [State!]!
+  listPolicies(serviceTypeId: Int): [Policy!]!
+  listActions(fromStateId: Int, serviceTypeId: Int): [Action!]!
+  listServices: [Service!]!
+
+  # User resolver
+  getUser(id: ID!): User
+  listUsers(limit: Int = 20, nextToken: String): UserConnection!
+  me: User!
+
+  # Chat resolver
+  getChatSession(id: ID!): ChatSession
+  listChatSessions(limit: Int = 10, nextToken: String): [ChatSession!]!
+}
+
+# ─── Mutations ───────────────────────────────────────────────────────────────────
 
 type Mutation {
-  _placeholder: String
+  # Action resolver (ADMIN, OPERATOR)
+  executeAction(input: ExecuteActionInput!): ExecuteActionResponse!
+  executeBulkAction(input: BulkActionInput!): BulkActionResponse!
+
+  # Upload resolver (ADMIN only)
+  uploadDevices(devices: [UploadDeviceInput!]!): UploadResult!
+
+  # User resolver (ADMIN only for mutations)
+  createUser(input: CreateUserInput!): User!
+  updateUser(id: ID!, input: UpdateUserInput!): User!
+
+  # Chat resolver (ADMIN, OPERATOR)
+  sendChatMessage(input: SendChatMessageInput!): ChatResponse!
+
+  # Internal mutations — Lambda workers call via IAM auth.
+  # Arg names must match subscription filter args for @aws_subscribe filtering.
+  notifyDeviceStateChanged(deviceId: ID!, stateId: Int!, currentPolicyId: Int!): Device @aws_iam
+  notifyActionExecutionUpdated(deviceId: ID!, executionId: ID!, status: ActionStatus!): ActionExecution @aws_iam
 }
 
+# ─── Subscriptions ───────────────────────────────────────────────────────────────
+
 type Subscription {
-  _placeholder: String
+  onDeviceStateChanged(deviceId: ID): Device
+    @aws_subscribe(mutations: ["notifyDeviceStateChanged"])
+
+  onActionExecutionUpdated(deviceId: ID): ActionExecution
+    @aws_subscribe(mutations: ["notifyActionExecutionUpdated"])
 }

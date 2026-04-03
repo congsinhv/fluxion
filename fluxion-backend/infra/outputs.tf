@@ -27,3 +27,11 @@ output "cognito_user_pool_id" {
 output "cognito_client_id" {
   value = module.auth.client_id
 }
+
+output "appsync_api_id" {
+  value = module.api.api_id
+}
+
+output "appsync_api_url" {
+  value = module.api.api_url
+}

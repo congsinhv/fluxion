@@ -41,3 +41,15 @@ resource "aws_ssm_parameter" "cognito_client_id" {
   type  = "String"
   value = module.auth.client_id
 }
+
+resource "aws_ssm_parameter" "appsync_api_url" {
+  name  = "/fluxion/${var.environment}/appsync/api-url"
+  type  = "String"
+  value = module.api.api_url
+}
+
+resource "aws_ssm_parameter" "appsync_api_id" {
+  name  = "/fluxion/${var.environment}/appsync/api-id"
+  type  = "String"
+  value = module.api.api_id
+}
