@@ -9,6 +9,9 @@ packages = [{include = "modules"}]
 python = "^3.12"
 aws-lambda-powertools = {extras = ["all"], version = "*"}
 psycopg = {extras = ["binary"], version = "*"}
+alembic = "^1.18.4"
+sqlalchemy = "^2.0.48"
+psycopg2-binary = "^2.9.11"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "*"
@@ -22,6 +25,9 @@ src = ["modules"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+"alembic/versions/*.py" = ["E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["modules"]
