@@ -19,3 +19,11 @@ output "rds_endpoint" {
 output "rds_proxy_endpoint" {
   value = module.database.rds_proxy_endpoint
 }
+
+output "cognito_user_pool_id" {
+  value = module.auth.user_pool_id
+}
+
+output "cognito_client_id" {
+  value = module.auth.client_id
+}
