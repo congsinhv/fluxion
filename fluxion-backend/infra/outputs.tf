@@ -1,2 +1,21 @@
-# Outputs consumed by OEM and Frontend via terraform_remote_state
-# Implementation: issues #30, #32, #33
+# Outputs consumed by OEM and Frontend via terraform_remote_state or SSM
+
+output "vpc_id" {
+  value = module.network.vpc_id
+}
+
+output "private_subnet_ids" {
+  value = module.network.private_subnet_ids
+}
+
+output "lambda_sg_id" {
+  value = module.network.lambda_sg_id
+}
+
+output "rds_endpoint" {
+  value = module.database.rds_endpoint
+}
+
+output "rds_proxy_endpoint" {
+  value = module.database.rds_proxy_endpoint
+}
