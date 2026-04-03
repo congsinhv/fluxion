@@ -1,0 +1,3 @@
+aws-lambda-powertools[all]==3.7.0
+psycopg[binary]==3.2.6
+openai==1.76.0

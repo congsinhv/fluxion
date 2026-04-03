@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: fluxion-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: fluxion
+      POSTGRES_USER: fluxion
+      POSTGRES_PASSWORD: fluxion_local
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
