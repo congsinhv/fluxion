@@ -112,12 +112,6 @@ type ActionExecution {
   extFields: AWSJSON
 }
 
-type ActionExecutionConnection {
-  items: [ActionExecution!]!
-  nextToken: String
-  totalCount: Int
-}
-
 type Milestone {
   id: ID!
   deviceId: ID!
@@ -175,17 +169,7 @@ type ChatResponse {
   session: ChatSession!
 }
 
-# ─── Statistics & Response Types ─────────────────────────────────────────────────
-
-type DeviceStats {
-  totalDevices: Int!
-  byState: [StateCount!]!
-}
-
-type StateCount {
-  state: String!
-  count: Int!
-}
+# ─── Response Types ───────────────────────────────────────────────────────────────
 
 type UploadResult {
   totalRequested: Int!
@@ -261,24 +245,41 @@ input UpdateUserInput {
   isActive: Boolean
 }
 
+input UpdateStateInput {
+  name: String!
+}
+
+input UpdatePolicyInput {
+  name: String
+  stateId: Int
+  serviceTypeId: Int
+  color: String
+}
+
+input UpdateActionInput {
+  name: String
+  actionTypeId: Int
+  fromStateId: Int
+  serviceTypeId: Int
+  applyPolicyId: Int
+  configuration: AWSJSON
+}
+
+input UpdateServiceInput {
+  name: String
+  isEnabled: Boolean
+}
+
 # ─── Queries ─────────────────────────────────────────────────────────────────────
 
 type Query {
   # Device resolver
   getDevice(id: ID!): Device
   listDevices(filter: DeviceFilter, limit: Int = 20, nextToken: String): DeviceConnection!
+  getDeviceHistory(deviceId: ID!, limit: Int = 20, nextToken: String): MilestoneConnection!
+  listAvailableActions(deviceId: ID!): [Action!]!
 
-  # Platform resolver
-  getDeviceStats: DeviceStats!
-  listActionExecutions(
-    deviceId: ID
-    status: ActionStatus
-    limit: Int = 20
-    nextToken: String
-  ): ActionExecutionConnection!
-  listMilestones(deviceId: ID!, limit: Int = 20, nextToken: String): MilestoneConnection!
-
-  # Config queries (platform resolver)
+  # Platform resolver (config queries)
   listStates: [State!]!
   listPolicies(serviceTypeId: Int): [Policy!]!
   listActions(fromStateId: Int, serviceTypeId: Int): [Action!]!
@@ -300,6 +301,12 @@ type Mutation {
   # Action resolver (ADMIN, OPERATOR)
   executeAction(input: ExecuteActionInput!): ExecuteActionResponse!
   executeBulkAction(input: BulkActionInput!): BulkActionResponse!
+
+  # Platform resolver — config mutations (ADMIN only)
+  updateState(id: Int!, input: UpdateStateInput!): State!
+  updatePolicy(id: Int!, input: UpdatePolicyInput!): Policy!
+  updateAction(id: ID!, input: UpdateActionInput!): Action!
+  updateService(id: Int!, input: UpdateServiceInput!): Service!
 
   # Upload resolver (ADMIN only)
   uploadDevices(devices: [UploadDeviceInput!]!): UploadResult!
