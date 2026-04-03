@@ -1,0 +1,32 @@
+# Fluxion MDM — AppSync GraphQL Schema
+# Full implementation: issue #33
+# Reference: https://github.com/congsinhv/fluxion/wiki/T5-—-Định-nghĩa-API-Contract-(GraphQL-Schema)
+
+enum UserRole {
+  ADMIN
+  OPERATOR
+}
+
+enum ActionStatus {
+  ACTION_PENDING
+  ACTION_COMPLETED
+  ACTION_FAILED
+}
+
+enum ChatMessageRole {
+  USER
+  ASSISTANT
+  TOOL
+}
+
+type Query {
+  _placeholder: String
+}
+
+type Mutation {
+  _placeholder: String
+}
+
+type Subscription {
+  _placeholder: String
+}
