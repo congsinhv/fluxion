@@ -1,0 +1,32 @@
+[tool.poetry]
+name = "fluxion-oem-processor"
+version = "0.1.0"
+description = "Fluxion MDM — OEM Layer (Apple MDM integration)"
+authors = ["Vo Cong Sinh"]
+packages = [{include = "apple_process_action"}]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+aws-lambda-powertools = {extras = ["all"], version = "*"}
+redis = "*"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "*"
+moto = {extras = ["all"], version = "*"}
+ruff = "*"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+src = ["apple_process_action"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["apple_process_action"]
+python_files = "test_*.py"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
