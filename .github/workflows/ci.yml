@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend-lint-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: fluxion-backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Poetry
+        run: pip install poetry
+      - name: Install dependencies
+        run: poetry install
+      - name: Lint
+        run: poetry run ruff check .
+      - name: Test
+        run: poetry run pytest
+
+  oem-lint-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: fluxion-oem-processor
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Poetry
+        run: pip install poetry
+      - name: Install dependencies
+        run: poetry install
+      - name: Lint
+        run: poetry run ruff check .
+      - name: Test
+        run: poetry run pytest
+
+  frontend-lint-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: fluxion-frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install
+        run: bun install --frozen-lockfile
+      - name: Lint
+        run: bun run lint
+      - name: Build
+        run: bun run build
+      - name: Test
+        run: bun run test -- --run
+
+  terraform-validate:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service:
+          - fluxion-backend/infra
+          - fluxion-oem-processor/infra
+          - fluxion-frontend/infra
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - name: Init
+        working-directory: ${{ matrix.service }}
+        run: terraform init -backend=false
+      - name: Validate
+        working-directory: ${{ matrix.service }}
+        run: terraform validate
