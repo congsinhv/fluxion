@@ -1,4 +1,4 @@
-"""Add parent module directory to sys.path so handler/db/utils can be imported."""
+"""Add parent src directory to sys.path so handler/db/utils can be imported."""
 
 import os
 import sys
