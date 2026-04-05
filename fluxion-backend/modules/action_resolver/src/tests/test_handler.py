@@ -11,6 +11,7 @@ with patch.dict(
         "POWERTOOLS_SERVICE_NAME": "test",
         "POWERTOOLS_TRACE_DISABLED": "1",
         "SQS_QUEUE_URL": "https://sqs.ap-southeast-1.amazonaws.com/123456789/test-queue",
+        "AWS_DEFAULT_REGION": "ap-southeast-1",
     },
 ):
     from db import DBConnection
