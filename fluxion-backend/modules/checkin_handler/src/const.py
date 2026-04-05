@@ -1,1 +1,15 @@
 """Constants for checkin_handler."""
+
+# Event types from OEM processor
+EVENT_DEVICE_TOKEN_UPDATE = "DEVICE_TOKEN_UPDATE"
+EVENT_DEVICE_RELEASED = "DEVICE_RELEASED"
+EVENT_ACTION_COMPLETED = "ACTION_COMPLETED"
+EVENT_ACTION_FAILED = "ACTION_FAILED"
+
+# Action execution statuses
+ACTION_COMPLETED = "ACTION_COMPLETED"
+ACTION_FAILED = "ACTION_FAILED"
+
+# Released state — matches seed data (state_id=6 Released, policy_id=6)
+RELEASED_STATE_ID = 6
+RELEASED_POLICY_ID = 6
