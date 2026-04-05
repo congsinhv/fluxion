@@ -18,13 +18,13 @@ ruff = "*"
 [tool.ruff]
 target-version = "py312"
 line-length = 120
-src = ["apple_process_action"]
+src = ["apple_process_action/src"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
 
 [tool.pytest.ini_options]
-testpaths = ["apple_process_action"]
+testpaths = ["apple_process_action/src"]
 python_files = "test_*.py"
 
 [build-system]

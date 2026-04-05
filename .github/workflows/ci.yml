@@ -25,8 +25,8 @@ jobs:
         run: poetry run ruff check .
       - name: Test
         run: |
-          for module in modules/*/tests; do
-            echo "=== Testing $(dirname $module) ==="
+          for module in modules/*/src/tests; do
+            echo "=== Testing $(basename $(dirname $(dirname $module))) ==="
             poetry run pytest "$module" -v
           done
 
