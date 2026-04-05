@@ -65,6 +65,35 @@ module "api" {
 module "compute" {
   source      = "./modules/compute"
   environment = var.environment
+  region      = var.region
+
+  # Network
+  private_subnet_ids = module.network.private_subnet_ids
+  lambda_sg_id       = module.network.lambda_sg_id
+
+  # Database
+  db_secret_arn = module.database.db_secret_arn
+  database_url  = "postgresql://${module.database.db_username}:${var.db_password}@${module.database.rds_proxy_endpoint}/${module.database.db_name}"
+
+  # Messaging — queue URLs (for Lambda env vars)
+  action_trigger_queue_url  = module.messaging.action_trigger_queue_url
+  upload_processor_queue_url = module.messaging.upload_processor_queue_url
+
+  # Messaging — queue ARNs (for IAM + event source mappings)
+  action_trigger_queue_arn  = module.messaging.action_trigger_queue_arn
+  upload_processor_queue_arn = module.messaging.upload_processor_queue_arn
+  checkin_handler_queue_arn  = module.messaging.checkin_handler_queue_arn
+
+  # SNS
+  command_sns_topic_arn = module.messaging.command_sns_topic_arn
+
+  # AppSync
+  appsync_endpoint = module.api.api_url
+  appsync_api_arn  = module.api.api_arn
+
+  # DynamoDB
+  idempotency_table_name = module.messaging.idempotency_table_name
+  idempotency_table_arn  = module.messaging.idempotency_table_arn
 }
 
 module "messaging" {
