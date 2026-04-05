@@ -7,7 +7,7 @@ resource "aws_sqs_queue" "action_trigger_dlq" {
 
 resource "aws_sqs_queue" "action_trigger" {
   name                       = "fluxion-${var.environment}-action-trigger-sqs"
-  visibility_timeout_seconds = var.visibility_timeout_seconds
+  visibility_timeout_seconds = var.worker_visibility_timeout_seconds
   message_retention_seconds  = var.message_retention_seconds
 
   redrive_policy = jsonencode({
@@ -43,7 +43,7 @@ resource "aws_sqs_queue" "checkin_handler_dlq" {
 
 resource "aws_sqs_queue" "checkin_handler" {
   name                       = "fluxion-${var.environment}-checkin-handler-sqs"
-  visibility_timeout_seconds = var.visibility_timeout_seconds
+  visibility_timeout_seconds = var.worker_visibility_timeout_seconds
   message_retention_seconds  = var.message_retention_seconds
 
   redrive_policy = jsonencode({

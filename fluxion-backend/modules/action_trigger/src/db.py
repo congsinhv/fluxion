@@ -30,7 +30,12 @@ class DBConnection:
         device_id: str,
         action_id: str,
     ) -> None:
-        """Insert action_execution + assign action to device in a single transaction."""
+        """Insert action_execution + assign action to device in a single transaction.
+
+        Uses ON CONFLICT DO NOTHING for idempotent SQS retries — if the execution
+        already exists (from a previous attempt that failed after DB commit but before
+        SNS publish), the INSERT is a no-op and the handler proceeds to publish.
+        """
         conn = cls._get_conn()
         with conn.transaction():
             conn.execute(
@@ -38,6 +43,7 @@ class DBConnection:
                 INSERT INTO {schema_name}.action_executions
                     (id, device_id, action_id, command_uuid, status)
                 VALUES (%(id)s, %(device_id)s, %(action_id)s, %(command_uuid)s, %(status)s)
+                ON CONFLICT (id) DO NOTHING
                 """,
                 {
                     "id": execution_id,

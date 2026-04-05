@@ -78,7 +78,14 @@ def _handle_action_completed(tenant: str, device_id: str, payload: dict) -> None
     action_id = str(execution["action_id"])
     logger.info("Execution completed", extra={"execution_id": execution_id, "command_uuid": command_uuid})
 
-    # 2. Get action's target policy and apply to device
+    # 2. Always notify execution update (even if policy lookup fails below)
+    call_appsync_mutation(NOTIFY_EXECUTION_UPDATED, {
+        "deviceId": device_id,
+        "executionId": execution_id,
+        "status": ACTION_COMPLETED,
+    })
+
+    # 3. Get action's target policy and apply to device
     policy = DBConnection.get_action_policy(tenant, action_id)
     if not policy:
         logger.warning("Action policy not found, skipping state update", extra={"action_id": action_id})
@@ -94,19 +101,14 @@ def _handle_action_completed(tenant: str, device_id: str, payload: dict) -> None
         assigned_action_id=None,
     )
 
-    # 3. Record milestone for device history
+    # 4. Record milestone for device history
     DBConnection.insert_milestone(tenant, device_id, action_id, policy_id)
 
-    # 4. Notify subscribers
+    # 5. Notify device state change
     call_appsync_mutation(NOTIFY_DEVICE_STATE, {
         "deviceId": device_id,
         "stateId": state_id,
         "currentPolicyId": policy_id,
-    })
-    call_appsync_mutation(NOTIFY_EXECUTION_UPDATED, {
-        "deviceId": device_id,
-        "executionId": execution_id,
-        "status": ACTION_COMPLETED,
     })
 
 

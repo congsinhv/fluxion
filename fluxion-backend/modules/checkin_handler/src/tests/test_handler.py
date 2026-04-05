@@ -115,14 +115,14 @@ class TestActionCompleted:
         with patch.object(DBConnection, "update_device"), patch.object(DBConnection, "insert_milestone"):
             handler(event, MagicMock())
 
-        # First call: notifyDeviceStateChanged
-        state_vars = mock_appsync.call_args_list[0][0][1]
-        assert state_vars["stateId"] == 3
-        assert state_vars["currentPolicyId"] == 3
-        # Second call: notifyActionExecutionUpdated
-        exec_vars = mock_appsync.call_args_list[1][0][1]
+        # First call: notifyActionExecutionUpdated (fires early, before policy lookup)
+        exec_vars = mock_appsync.call_args_list[0][0][1]
         assert exec_vars["executionId"] == "exec-001"
         assert exec_vars["status"] == "ACTION_COMPLETED"
+        # Second call: notifyDeviceStateChanged
+        state_vars = mock_appsync.call_args_list[1][0][1]
+        assert state_vars["stateId"] == 3
+        assert state_vars["currentPolicyId"] == 3
 
     @patch("handler.call_appsync_mutation")
     @patch.object(DBConnection, "update_action_execution")

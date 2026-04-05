@@ -4,6 +4,9 @@ import psycopg
 from config import DATABASE_URL, logger
 from psycopg.rows import dict_row
 
+# Sentinel for "don't update this column" in update_device
+_SKIP = object()
+
 
 class DBConnection:
     """Singleton DB connection for checkin_handler.
@@ -64,11 +67,11 @@ class DBConnection:
         device_id: str,
         state_id: int | None = None,
         current_policy_id: int | None = None,
-        assigned_action_id: str | None = "SKIP",
+        assigned_action_id=_SKIP,
     ) -> None:
         """UPDATE devices with dynamic SET clauses.
 
-        Pass assigned_action_id=None to clear it, "SKIP" (default) to leave unchanged.
+        Pass assigned_action_id=None to clear it, _SKIP (default) to leave unchanged.
         """
         conn = cls._get_conn()
         sets: list[str] = []
@@ -80,7 +83,7 @@ class DBConnection:
         if current_policy_id is not None:
             sets.append("current_policy_id = %(policy_id)s")
             params["policy_id"] = current_policy_id
-        if assigned_action_id != "SKIP":
+        if assigned_action_id is not _SKIP:
             sets.append("assigned_action_id = %(action_id)s")
             params["action_id"] = assigned_action_id
 

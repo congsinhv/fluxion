@@ -10,7 +10,6 @@ from botocore.awsrequest import AWSRequest
 from config import APPSYNC_ENDPOINT, logger
 
 _session = boto3.Session()
-_credentials = _session.get_credentials().get_frozen_credentials()
 _region = _session.region_name or "ap-southeast-1"
 
 
@@ -35,7 +34,9 @@ def call_appsync_mutation(query: str, variables: dict) -> dict:
         data=payload,
         headers={"Content-Type": "application/json"},
     )
-    SigV4Auth(_credentials, "appsync", _region).add_auth(request)
+    # Resolve credentials per-call to handle IAM role rotation on warm containers
+    credentials = _session.get_credentials().get_frozen_credentials()
+    SigV4Auth(credentials, "appsync", _region).add_auth(request)
 
     req = urllib.request.Request(
         APPSYNC_ENDPOINT,
