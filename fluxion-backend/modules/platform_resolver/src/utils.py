@@ -11,6 +11,21 @@ def validate_tenant_id(tenant_id: str) -> str:
     return tenant_id
 
 
+def get_tenant(app_instance) -> str:
+    """Extract and validate tenant_id from JWT claims."""
+    tenant_id = app_instance.current_event.identity.claims["custom:tenant_id"]
+    return validate_tenant_id(tenant_id)
+
+
+def require_admin(app_instance) -> None:
+    """Raise ForbiddenError if caller is not ADMIN."""
+    from exceptions import ForbiddenError
+
+    role = app_instance.current_event.identity.claims.get("custom:role")
+    if role != "ADMIN":
+        raise ForbiddenError("Only ADMIN can modify config")
+
+
 def format_state(row: dict) -> dict:
     return {"id": row["id"], "name": row["name"]}
 

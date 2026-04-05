@@ -31,6 +31,12 @@ def validate_tenant_id(tenant_id: str) -> str:
     return tenant_id
 
 
+def get_tenant(app_instance) -> str:
+    """Extract and validate tenant_id from JWT claims."""
+    tenant_id = app_instance.current_event.identity.claims["custom:tenant_id"]
+    return validate_tenant_id(tenant_id)
+
+
 def format_device(row: dict) -> dict:
     """Format a device row with nested state, policy, information, tokens."""
     device = {

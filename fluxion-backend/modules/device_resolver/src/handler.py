@@ -13,21 +13,15 @@ from utils import (
     format_device,
     format_device_list_item,
     format_milestone,
-    validate_tenant_id,
+    get_tenant,
 )
 
 app = AppSyncResolver()
 
 
-def _get_tenant(app_instance: AppSyncResolver) -> str:
-    """Extract and validate tenant_id from JWT claims."""
-    tenant_id = app_instance.current_event.identity.claims["custom:tenant_id"]
-    return validate_tenant_id(tenant_id)
-
-
 @app.resolver(type_name="Query", field_name="getDevice")
 def get_device(id: str) -> dict:
-    tenant = _get_tenant(app)
+    tenant = get_tenant(app)
     try:
         row = DBConnection.get_device_by_id(schema_name=tenant, device_id=id)
         if not row:
@@ -46,7 +40,7 @@ def list_devices(
     limit: int = DEFAULT_LIMIT,
     nextToken: str | None = None,  # noqa: N803
 ) -> dict:
-    tenant = _get_tenant(app)
+    tenant = get_tenant(app)
     limit = min(limit, MAX_LIMIT)
     try:
         offset = decode_next_token(nextToken)
@@ -86,7 +80,7 @@ def list_devices(
 def get_device_history(
     deviceId: str, limit: int = DEFAULT_LIMIT, nextToken: str | None = None  # noqa: N803
 ) -> dict:
-    tenant = _get_tenant(app)
+    tenant = get_tenant(app)
     limit = min(limit, MAX_LIMIT)
     try:
         offset = decode_next_token(nextToken)
@@ -108,7 +102,7 @@ def get_device_history(
 
 @app.resolver(type_name="Query", field_name="listAvailableActions")
 def list_available_actions(deviceId: str) -> list[dict]:  # noqa: N803
-    tenant = _get_tenant(app)
+    tenant = get_tenant(app)
     try:
         # First get the device to find its current state
         device_row = DBConnection.get_device_by_id(schema_name=tenant, device_id=deviceId)

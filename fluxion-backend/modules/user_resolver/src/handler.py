@@ -10,7 +10,6 @@ from const import DEFAULT_LIMIT, MAX_LIMIT
 from db import DBConnection
 from exceptions import (
     FluxionError,
-    ForbiddenError,
     UserAlreadyExistsError,
     UserNotFoundError,
 )
@@ -18,7 +17,8 @@ from utils import (
     decode_next_token,
     encode_next_token,
     format_user,
-    validate_tenant_id,
+    get_tenant,
+    require_admin,
 )
 
 app = AppSyncResolver()
@@ -27,23 +27,12 @@ COGNITO_USER_POOL_ID = os.environ.get("COGNITO_USER_POOL_ID", "")
 cognito_client = boto3.client("cognito-idp")
 
 
-def _get_tenant(app_instance: AppSyncResolver) -> str:
-    tenant_id = app_instance.current_event.identity.claims["custom:tenant_id"]
-    return validate_tenant_id(tenant_id)
-
-
-def _require_admin(app_instance: AppSyncResolver) -> None:
-    role = app_instance.current_event.identity.claims.get("custom:role")
-    if role != "ADMIN":
-        raise ForbiddenError("Only ADMIN can manage users")
-
-
 # ─── Queries ─────────────────────────────────────────────────────────────────────
 
 
 @app.resolver(type_name="Query", field_name="me")
 def me() -> dict:
-    tenant = _get_tenant(app)
+    tenant = get_tenant(app)
     try:
         cognito_sub = app.current_event.identity.sub
         row = DBConnection.get_user_by_cognito_sub(schema_name=tenant, cognito_sub=cognito_sub)
@@ -59,7 +48,7 @@ def me() -> dict:
 
 @app.resolver(type_name="Query", field_name="getUser")
 def get_user(id: str) -> dict:
-    tenant = _get_tenant(app)
+    tenant = get_tenant(app)
     try:
         row = DBConnection.get_user_by_id(schema_name=tenant, user_id=id)
         if not row:
@@ -74,7 +63,7 @@ def get_user(id: str) -> dict:
 
 @app.resolver(type_name="Query", field_name="listUsers")
 def list_users(limit: int = DEFAULT_LIMIT, nextToken: str | None = None) -> dict:  # noqa: N803
-    tenant = _get_tenant(app)
+    tenant = get_tenant(app)
     limit = min(limit, MAX_LIMIT)
     try:
         offset = decode_next_token(nextToken)
@@ -98,8 +87,8 @@ def list_users(limit: int = DEFAULT_LIMIT, nextToken: str | None = None) -> dict
 
 @app.resolver(type_name="Mutation", field_name="createUser")
 def create_user(input: dict) -> dict:
-    _require_admin(app)
-    tenant = _get_tenant(app)
+    require_admin(app)
+    tenant = get_tenant(app)
     cognito_sub = None
     try:
         email = input["email"]
@@ -152,8 +141,8 @@ def create_user(input: dict) -> dict:
 
 @app.resolver(type_name="Mutation", field_name="updateUser")
 def update_user(id: str, input: dict) -> dict:
-    _require_admin(app)
-    tenant = _get_tenant(app)
+    require_admin(app)
+    tenant = get_tenant(app)
     try:
         row = DBConnection.update_user(schema_name=tenant, user_id=id, input_data=input)
         if not row:
