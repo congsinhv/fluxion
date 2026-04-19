@@ -1,0 +1,56 @@
+name: CI — fluxion-frontend
+
+on:
+  pull_request:
+    paths:
+      - "fluxion-frontend/**"
+      - ".github/workflows/ci-frontend.yml"
+  push:
+    branches: [main]
+    paths:
+      - "fluxion-frontend/**"
+      - ".github/workflows/ci-frontend.yml"
+
+defaults:
+  run:
+    working-directory: fluxion-frontend
+
+jobs:
+  lint-and-test:
+    name: lint + typecheck + test + build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.1.x"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Prettier check
+        run: bun run format:check
+
+      - name: ESLint
+        run: bun run lint
+
+      - name: Typecheck (tsc strict)
+        run: bun run typecheck
+
+      - name: Vitest with coverage
+        run: bun run test:coverage
+
+      - name: Build (sanity check)
+        run: bun run build
+
+      - name: Upload coverage
+        if: always()
+        uses: codecov/codecov-action@v4
+        with:
+          files: fluxion-frontend/coverage/coverage-final.json
+          flags: frontend
+        continue-on-error: true

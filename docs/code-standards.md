@@ -148,6 +148,7 @@ print(f"device {d.id} enrolled for customer {customer.full_name}")  # PII leak +
 - Use `from __future__ import annotations` at top of every file (defers evaluation, allows forward refs).
 - Prefer built-in generics (`list[str]`, `dict[str, int]`) over `typing.List` / `typing.Dict`.
 - Use `Literal`, `TypedDict`, `NotRequired` where applicable.
+- For SQLAlchemy, prefer 2.0 style types (`Engine`, `Connection` from `sqlalchemy.engine`; `Result` for return values) — not legacy `engine.Engine` module-path syntax.
 
 **Do:**
 
@@ -217,7 +218,8 @@ def handler(event, context):
 
 ### 3.5 Imports
 
-- **Absolute imports only** — `from fluxion_backend.device_resolver.src.dto import ...`, not `from ..dto import ...`.
+- **Absolute imports only, no `src.` prefix** — `from config import logger`, not `from src.config import logger` and not relative `from .config import ...`.
+  - Rationale: Lambda runtime copies `src/` contents flat into `LAMBDA_TASK_ROOT`. Tests mirror this via `pyproject.toml` → `[tool.pytest.ini_options] pythonpath = ["src"]`. Handlers import the same way in both contexts.
 - **Grouped** (PEP 8): stdlib → third-party → local, blank line between groups.
 - **No wildcard imports** (`from x import *`).
 - **No circular deps** — enforce via `import-linter` when tooling ticket lands.
@@ -324,21 +326,23 @@ export function useDeviceList(tenantId: string): DeviceListResult {
 ### 5.1 Parameterized Queries Only
 
 - **Never** string-concat / f-string user input into SQL.
-- Use driver parameterization (`%s` placeholders for psycopg2, named params for SQLAlchemy).
+- Fluxion uses **SQLAlchemy 2.0** with `text()` + named params (`:name` style) everywhere.
+- Tenant schema names are the single exception to the f-string rule: they can be interpolated into the SQL **only after** the regex validation in `Connection.get_schema_name` (see [design-patterns.md §11.2](design-patterns.md)).
 
-**Do:**
+**Do (SQLAlchemy, named params):**
 
 ```python
-cursor.execute(
-    "SELECT * FROM devices WHERE tenant_id = %s AND serial = %s",
-    (tenant_id, serial),
-)
+from sqlalchemy import text
+
+query = text(f"SELECT * FROM {schema}.devices WHERE serial = :serial")
+row = conn._execute(query, {"serial": serial}).fetchone()
 ```
 
 **Don't:**
 
 ```python
-cursor.execute(f"SELECT * FROM devices WHERE serial = '{serial}'")  # SQL injection
+conn._execute(text(f"SELECT * FROM {schema}.devices WHERE serial = '{serial}'"))  # SQL injection
+conn._execute(text("SELECT * FROM devices WHERE serial = %s"), (serial,))        # wrong param style
 ```
 
 ### 5.2 Migration Style

@@ -13,7 +13,7 @@
 fluxion/
 ├── fluxion-frontend/       React 19 SPA (admin console) — own terraform/
 ├── fluxion-backend/        Python Lambda resolvers — own terraform/
-├── fluxion-oem/            Python Lambda workers for OEM integrations (APNS, future Samsung/Xiaomi) — own terraform/
+├── fluxion-oem-processor/            Python Lambda workers for OEM integrations (APNS, future Samsung/Xiaomi) — own terraform/
 ├── docs/                   Foundation docs (this document lives here)
 ├── plans/                  Implementation plans + reports
 ├── .github/                CI/CD workflows, PR templates, issue templates
@@ -22,7 +22,7 @@ fluxion/
 
 **Rules:**
 
-- One language runtime per sub-repo. `fluxion-frontend/` is TypeScript only; `fluxion-backend/` and `fluxion-oem/` are Python only.
+- One language runtime per sub-repo. `fluxion-frontend/` is TypeScript only; `fluxion-backend/` and `fluxion-oem-processor/` are Python only.
 - Cross-repo sharing happens through **contracts**, not imports: GraphQL schema, SQS event schemas (JSON Schema / Pydantic models re-declared per consumer), SSM parameters.
 - **Per-sub-repo IaC.** Each `fluxion-*` repo owns its own `terraform/` dir — deploys its own stack independently.
 - **No shared code dirs.** Each Lambda is self-contained; cross-cutting concerns (logging, auth decorators, error base classes) are copied per Lambda. Avoids coupling + deployment-order issues.
@@ -64,18 +64,20 @@ Each Lambda function is a Python package. Directory name **must be snake_case** 
 
 ```
 fluxion-backend/modules/device_resolver/
-├── __init__.py
-├── handler.py                    # Lambda entry (≤ 50 LOC)
-├── config.py                     # Env var parsing, constants
-├── helpers.py                    # Module-local utilities
-├── db.py                         # Data access (psycopg2 / SQLAlchemy)
-├── errors.py                     # Domain errors (FluxionError subclasses)
-├── pyproject.toml                # Per-Lambda dependencies
-├── Dockerfile                    # Container image (inherits from Dockerfile.resolver)
-└── tests/
-    ├── __init__.py
-    ├── conftest.py
-    └── test_*.py
+├── src/
+│   ├── __init__.py
+│   ├── handler.py                # Lambda entry (≤ 50 LOC)
+│   ├── config.py                 # Env vars + clients + logger (single source)
+│   ├── helpers.py                # Module-local utilities
+│   ├── db.py                     # Data access (SQLAlchemy Connection class)
+│   ├── exceptions.py             # Domain errors (FluxionError subclasses)
+│   └── const.py                  # Event key constants, magic strings
+├── tests/
+│   ├── __init__.py
+│   ├── conftest.py
+│   └── test_*.py
+├── pyproject.toml                # Per-Lambda dependencies (uv-managed)
+└── Dockerfile                    # Container image (inherits from Dockerfile.resolver)
 ```
 
 **Rules:**
@@ -83,8 +85,10 @@ fluxion-backend/modules/device_resolver/
 - `handler.py` ≤ 50 LOC. Parse event → Pydantic → delegate → serialize. No business logic.
 - One logical concern per file. Split when a file crosses 200 LOC (see §2.3).
 - Each Lambda is **self-contained** — no imports from sibling modules. Copy common utilities when needed; rely on AWS Lambda Layers or post-build bundling only if duplication becomes painful (document the exception).
-- Tests live inside the Lambda package in `tests/` — colocated, not in a sibling tree. Self-contained packaging (exclude `tests/` via Dockerfile / zip).
-- `__init__.py` stays empty unless re-exporting intentional public API.
+- **Imports within a Lambda use no `src.` prefix** — `from config import logger`, not `from src.config import logger`. Dockerfile copies `src/` contents flat into `LAMBDA_TASK_ROOT`; pytest `pythonpath = ["src"]` mirrors this at test time.
+- **Pydantic models live inline** in the file that owns the boundary: input/output models in `handler.py`, DB row models in `db.py`. No separate `dto.py` file.
+- Tests live at the Lambda-package root (`tests/`), not inside `src/` — standard `src/` layout pattern. Exclude `tests/` from Docker packaging.
+- `__init__.py` inside `src/` stays empty unless re-exporting intentional public API.
 
 ### 2.3 When to Split a File
 
@@ -96,14 +100,14 @@ fluxion-backend/modules/device_resolver/
 
 ---
 
-## 3. fluxion-oem (Python 3.12 — OEM worker Lambdas)
+## 3. fluxion-oem-processor (Python 3.12 — OEM worker Lambdas)
 
 OEM workers consume SQS events and talk to vendor-specific APIs (Apple APNS today; Samsung Knox, Xiaomi in future).
 
 ### 3.1 Top-Level Layout
 
 ```
-fluxion-oem/
+fluxion-oem-processor/
 ├── modules/
 │   └── apple_process_action/     # Lambda package — Apple MDM / APNS worker
 ├── terraform/                    # IaC — modules + environments (see §5)
@@ -189,7 +193,7 @@ Each `fluxion-*` repo owns its own `terraform/` directory. No monorepo-root IaC.
 | Repo | Terraform owns |
 |------|---------------|
 | `fluxion-backend/terraform/` | AppSync API, RDS + Proxy, Cognito, Lambda resolvers (ECR repos), SNS/SQS for command pipeline |
-| `fluxion-oem/terraform/` | OEM worker Lambdas (ECR repos), SQS consumer queues, APNS secret rotation |
+| `fluxion-oem-processor/terraform/` | OEM worker Lambdas (ECR repos), SQS consumer queues, APNS secret rotation |
 | `fluxion-frontend/terraform/` | CloudFront, S3 static hosting, WAF, ACM cert, Route53 record |
 
 Shared primitives (VPC, base networking, IAM roles) live in whichever repo boots them **first** (typically `fluxion-backend`); other repos consume via `data "aws_ssm_parameter"` or `data "terraform_remote_state"`.
@@ -235,7 +239,7 @@ When two sub-repos must agree on a shape, the contract lives outside both:
 | Contract | Location | Consumer |
 |----------|----------|----------|
 | GraphQL schema | `fluxion-backend/schema.graphql` (root of backend repo) | Frontend codegen input |
-| SQS event payloads | Re-declared as Pydantic models inside each consuming Lambda's `dto.py` | OEM workers, checkin_handler |
+| SQS event payloads | Re-declared as Pydantic models inline in each consuming Lambda's `handler.py` (next to the SQS entry) | OEM workers, checkin_handler |
 | SSM parameters | Written by producing repo's Terraform; read via `data "aws_ssm_parameter"` | Other sub-repos' Terraform (cross-stack wiring) |
 | Lambda env vars | `<sub-repo>/terraform/modules/<lambda>/variables.tf` | Lambda runtime via `os.environ` |
 
@@ -267,7 +271,7 @@ Structure rules exist to reduce churn, not to gatekeep. Deviate when **documente
 
 - Prototyping a new Lambda? A single `handler.py` > 50 LOC is fine during spike — note intent to split before merge.
 - One-off script that does not import anywhere else? Flat `scripts/` dir at sub-repo root is fine.
-- Experimental OEM integration? Temporary `experimental/` dir within `fluxion-oem/modules/` is acceptable until graduated.
+- Experimental OEM integration? Temporary `experimental/` dir within `fluxion-oem-processor/modules/` is acceptable until graduated.
 
 Deviations must not leak into tests or contracts — those follow the rules strictly.
 

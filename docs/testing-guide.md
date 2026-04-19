@@ -37,15 +37,20 @@ This guide defines the test pyramid, naming, fixtures, coverage, and CI gates. E
 
 ```
 modules/device_resolver/
-├── handler.py
-├── db.py
-├── dto.py
-└── tests/
-    ├── __init__.py
-    ├── conftest.py
-    ├── test_handler.py
-    ├── test_db.py
-    └── test_dto.py
+├── src/
+│   ├── handler.py
+│   ├── config.py
+│   ├── db.py
+│   ├── exceptions.py
+│   ├── helpers.py
+│   └── const.py
+├── tests/
+│   ├── __init__.py
+│   ├── conftest.py
+│   ├── test_handler.py
+│   └── test_db.py
+├── pyproject.toml        # pythonpath = ["src"] so tests import like Lambda runtime
+└── Dockerfile
 ```
 
 **Examples:**

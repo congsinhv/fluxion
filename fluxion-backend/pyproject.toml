@@ -1,0 +1,113 @@
+[project]
+name = "fluxion-backend"
+version = "0.1.0"
+requires-python = ">=3.12"
+# Workspace root — no runtime dependencies here.
+# All runtime deps live in modules/*/pyproject.toml.
+dependencies = []
+
+[tool.uv.workspace]
+members = ["modules/*"]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.9",
+    "mypy>=1.15",
+    "pytest>=8.3",
+    "pytest-cov>=6.0",
+    "pytest-asyncio>=0.25",
+    "testcontainers[postgres]>=4.9",
+    "moto[all]>=5.0",
+    "sqlalchemy>=2.0",  # mypy needs this to type-check db.py stubs
+    "types-sqlalchemy>=1.4",
+]
+
+# ---------------------------------------------------------------------------
+# Ruff — formatter + linter (replaces black + isort + flake8 + pylint)
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    # --- Formatter conflicts (ruff docs recommend disabling these two) ---
+    "COM812",  # missing trailing comma — formatter handles this
+    "ISC001",  # implicit string concat on single line — formatter conflict
+
+    # --- Docstrings not required in test functions (testing convention) ---
+    "D1",      # missing-docstring rules (D100–D107) — test fns don't need docstrings
+
+    # --- String exception messages — pragmatic, matches project style ---
+    "EM101",   # raw string in exception — acceptable for short error messages
+    "EM102",   # f-string in exception — acceptable for short error messages
+    "TRY003",  # long exception message — project style is inline strings
+
+    # --- Copyright headers — not our convention ---
+    "CPY001",
+
+    # --- TODO/FIXME — governed by code-standards.md §2.3 (ticket-linked only) ---
+    "FIX002",  # line contains TODO — rule would fire on skeleton comments
+
+    # --- ANN rules conflict with __future__ annotations approach ---
+    "ANN",     # annotations enforced by mypy --strict, not ruff ANN rules
+
+    # --- TD rules are overly strict for this codebase ---
+    "TD",      # TODO tags — governed by code-standards §2.3 instead
+
+    # --- D rules for module docstrings in __init__.py (empty by convention) ---
+    "D104",    # missing docstring in public package
+
+    # --- Avoid S101 (assert) trigger in tests ---
+    "S101",    # use of assert in tests is correct
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = [
+    "D",       # no docstrings required in test files
+    "S101",    # assert is expected in tests
+    "PLR2004", # magic values acceptable in test assertions
+    "PLC0415", # imports not at top level — fixtures sometimes need them mid-function
+]
+"migrations/*" = [
+    "D",       # generated migration files exempt from docstring rules
+    "INP001",  # implicit namespace package — migrations/ is not a package
+]
+"modules/_template/src/config.py" = [
+    "ERA001",  # template file uses instructional comments that look like code
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.format]
+# Use ruff default formatter settings (compatible with black style).
+
+# ---------------------------------------------------------------------------
+# Mypy — strict type checker
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.12"
+strict = true
+# Point mypy at the src/ directory so `from config import X` resolves.
+# Run as: mypy --strict modules/_template/src/
+mypy_path = "modules/_template/src"
+explicit_package_bases = true
+
+# ---------------------------------------------------------------------------
+# Pytest — test runner + coverage
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+addopts = "--cov --cov-fail-under=80 --cov-report=term-missing"
+
+[tool.coverage.run]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]

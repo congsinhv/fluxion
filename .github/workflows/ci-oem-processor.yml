@@ -1,0 +1,57 @@
+name: CI — fluxion-oem-processor
+
+on:
+  pull_request:
+    paths:
+      - "fluxion-oem-processor/**"
+      - ".github/workflows/ci-oem-processor.yml"
+  push:
+    branches: [main]
+    paths:
+      - "fluxion-oem-processor/**"
+      - ".github/workflows/ci-oem-processor.yml"
+
+defaults:
+  run:
+    working-directory: fluxion-oem-processor
+
+jobs:
+  lint-and-test:
+    name: lint + typecheck + test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.5.x"
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Sync dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Ruff format check
+        run: uv run ruff format --check .
+
+      - name: Ruff lint
+        run: uv run ruff check .
+
+      - name: Mypy (strict)
+        run: uv run mypy --strict modules/
+
+      - name: Pytest with coverage
+        run: uv run pytest --cov --cov-report=xml --cov-fail-under=80
+
+      - name: Upload coverage
+        if: always()
+        uses: codecov/codecov-action@v4
+        with:
+          files: fluxion-oem-processor/coverage.xml
+          flags: oem-processor
+        continue-on-error: true

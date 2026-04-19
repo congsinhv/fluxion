@@ -89,38 +89,36 @@ def lambda_handler(event, context):
 5. Writes a row to `device_state_transitions` (history).
 6. Emits milestone events post-commit via outbox pattern.
 
-**Fluxion example (schema-qualified, guard in SQL):**
+**Fluxion example (schema-qualified, SQLAlchemy `text()` + named params, guard in SQL):**
 
 ```python
-# modules/action_trigger/handler.py — simplified
+# modules/action_trigger/src/handler.py — simplified
+from sqlalchemy import text
+
 def apply_action(conn, tenant_schema: str, device_id: str, action: str) -> Device:
-    # tenant_schema is validated by caller (Cognito claim) — never user-supplied here
-    with conn.cursor() as cur:
-        cur.execute(
-            f"""
-            WITH cur AS (
-                SELECT state FROM {tenant_schema}.devices WHERE id = %s FOR UPDATE
-            ),
-            policy AS (
-                SELECT p.to_state
-                FROM {tenant_schema}.state_policies p, cur
-                WHERE p.from_state = cur.state AND p.action = %s
-                  AND (p.guard_sql IS NULL OR evaluate_guard(p.guard_sql, %s))
-            )
-            UPDATE {tenant_schema}.devices
-            SET state = (SELECT to_state FROM policy)
-            WHERE id = %s AND (SELECT to_state FROM policy) IS NOT NULL
-            RETURNING *;
-            """,
-            (device_id, action, device_id, device_id),
+    # tenant_schema is validated by caller — never user-supplied here (see §11.2)
+    query = text(f"""
+        WITH cur AS (
+            SELECT state FROM {tenant_schema}.devices WHERE id = :device_id FOR UPDATE
+        ),
+        policy AS (
+            SELECT p.to_state
+            FROM {tenant_schema}.state_policies p, cur
+            WHERE p.from_state = cur.state AND p.action = :action
+              AND (p.guard_sql IS NULL OR evaluate_guard(p.guard_sql, :device_id))
         )
-        row = cur.fetchone()
-        if not row:
-            raise IllegalTransition(device_id, action)
-        return Device.model_validate(dict(row))
+        UPDATE {tenant_schema}.devices
+        SET state = (SELECT to_state FROM policy)
+        WHERE id = :device_id AND (SELECT to_state FROM policy) IS NOT NULL
+        RETURNING *
+    """)
+    row = conn._execute(query, {"device_id": device_id, "action": action}).fetchone()
+    if not row:
+        raise IllegalTransition(device_id, action)
+        return Device.model_validate(row._asdict())
 ```
 
-**Schema name safety.** `tenant_schema` is injected into SQL via f-string, which is normally a SQL-injection red flag. It is safe **only because** the value comes from a validated source (Cognito claim → `meta.tenants.schema_name` lookup at auth time) and is matched against a regex (`^tenant_[a-z0-9_]+$`) before any query. Never accept `tenant_schema` from request arguments directly.
+**Schema name safety.** `tenant_schema` is injected into SQL via f-string, which is normally a SQL-injection red flag. It is safe **only because** the value comes from a validated source (Cognito claim → `Connection.get_schema_name(tenant_id)` → `public.t_tenant_schema_mapping` lookup) and is matched against a regex (`^tenant_[a-z0-9_]+$`) before any query (see §11.2). Never accept `tenant_schema` from request arguments directly.
 
 **Why DB-driven.** Policies change without redeploy — operators (with the right role) add a new `action=release` policy row for a new state. Guards stay in SQL so they run in the same transaction as the mutation.
 
@@ -205,54 +203,82 @@ Handlers and services import from `config.py`. They never call `os.environ` dire
 
 ## 5. Repository Pattern
 
-**Problem.** Business logic sprinkled with SQL is un-reviewable: you cannot tell at a glance whether a query respects tenant isolation, uses an index, or handles the "row already locked" race. Embedded `execute(...)` calls also couple business code to `psycopg2` specifics.
+**Problem.** Business logic sprinkled with SQL is un-reviewable: you cannot tell at a glance whether a query respects tenant isolation, uses an index, or handles the "row already locked" race. Embedded `execute(...)` calls also couple business code to driver specifics.
 
-**Solution — `db.py` per Lambda.** All data access lives in a single module per Lambda with a clear API. Business logic gets Pydantic DTOs, never raw `dict` rows.
+**Solution — `Connection` class + repositories per Lambda.** All data access lives in a single `db.py` per Lambda. A thin `Connection` class wraps the SQLAlchemy engine, resolves `tenant_id → schema_name` via `public.t_tenant_schema_mapping`, and exposes a safe `_execute()` for raw `text()` queries. Repositories bind to one tenant schema for their entire lifetime.
 
 ```python
-# modules/device_resolver/db.py
+# modules/device_resolver/src/db.py
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Connection as SAConnection, Engine, Result
+from sqlalchemy.exc import SQLAlchemyError
+from config import DATABASE_URI, logger
+from exceptions import DatabaseError, TenantNotFound
+import re
+
+_SCHEMA_NAME_RE = re.compile(r"^tenant_[a-z0-9_]{1,40}$")
+
+
+class Connection:
+    def __init__(self) -> None:
+        try:
+            self._engine: Engine = create_engine(DATABASE_URI)
+            self._connection: SAConnection = self._engine.connect()
+        except SQLAlchemyError as e:
+            logger.exception("db.connect_failed")
+            raise DatabaseError("database connection failed") from e
+
+    def get_schema_name(self, tenant_id: str) -> str:
+        query = text("""
+            SELECT tsm.schema_name
+            FROM public.t_tenant_schema_mapping tsm
+            WHERE tsm.tenant_id = :tenant_id
+        """)
+        row = self._execute(query, {"tenant_id": tenant_id}).fetchone()
+        if not row:
+            raise TenantNotFound(tenant_id)
+        if not _SCHEMA_NAME_RE.fullmatch(row.schema_name):
+            raise DatabaseError(f"invalid schema_name: {row.schema_name!r}")
+        return row.schema_name
+
+    def _execute(self, query, params=None) -> Result:
+        return self._connection.execute(query, params or {})
+
+
 class DeviceRepository:
-    def __init__(self, conn: psycopg2.extensions.connection, tenant_schema: str) -> None:
-        # tenant_schema comes from validated Cognito context (see §3 schema-name safety note)
+    def __init__(self, conn: Connection, tenant_schema: str) -> None:
         self._conn = conn
         self._schema = tenant_schema
 
     def get_by_id(self, device_id: str) -> Device | None:
-        with self._conn.cursor() as cur:
-            cur.execute(
-                f"SELECT * FROM {self._schema}.devices WHERE id = %s",
-                (device_id,),
-            )
-            row = cur.fetchone()
-        return Device.model_validate(dict(row)) if row else None
+        query = text(f"SELECT * FROM {self._schema}.devices WHERE id = :id")
+        row = self._conn._execute(query, {"id": device_id}).fetchone()
+        return Device.model_validate(row._asdict()) if row else None
 
     def enroll(self, serial: str, platform: Platform) -> Device:
-        with self._conn.cursor() as cur:
-            cur.execute(
-                f"""
-                INSERT INTO {self._schema}.devices (serial, platform, state)
-                VALUES (%s, %s, 'registered')
-                ON CONFLICT (serial) DO NOTHING
-                RETURNING *;
-                """,
-                (serial, platform.value),
-            )
-            row = cur.fetchone()
+        query = text(f"""
+            INSERT INTO {self._schema}.devices (serial, platform, state)
+            VALUES (:serial, :platform, 'registered')
+            ON CONFLICT (serial) DO NOTHING
+            RETURNING *
+        """)
+        row = self._conn._execute(query, {"serial": serial, "platform": platform.value}).fetchone()
         if not row:
             raise SerialAlreadyRegistered(serial)
-        return Device.model_validate(dict(row))
+        return Device.model_validate(row._asdict())
 ```
 
-**Tenant isolation is structural.** With tenant-per-schema, isolation lives in the schema boundary — the `DeviceRepository` is bound to one tenant schema for its entire lifetime. No query has a free `WHERE tenant_id = %s` clause; cross-tenant leaks require a bug in *construction* (wrong schema passed in), not in individual queries.
+**Tenant isolation is structural.** With tenant-per-schema, isolation lives in the schema boundary — the `DeviceRepository` is bound to one tenant schema for its entire lifetime. No query has a free `WHERE tenant_id = ...` clause; cross-tenant leaks require a bug in *construction* (wrong schema passed in), not in individual queries.
 
-**Testability.** In unit tests, mock `psycopg2.connection.cursor` (the driver seam), never the `DeviceRepository` class. The class is the thing under test.
+**Testability.** In unit tests, mock the SQLAlchemy engine at construction time (the driver seam), never the `DeviceRepository` class. The class is the thing under test.
 
-**When NOT to use.** A Lambda that executes one query, no branching, no reuse (a health-check endpoint). Inline the `execute` call in the handler.
+**When NOT to use.** A Lambda that executes one query, no branching, no reuse (a health-check endpoint). Inline the `text()` + `execute()` in the handler.
 
 **Common mistakes:**
-- Repository method returns raw row dicts. Always return Pydantic DTOs — the repository is the shape-validation boundary.
+- Repository method returns raw row objects. Always return Pydantic DTOs via `row._asdict()` — the repository is the shape-validation boundary.
 - Repository calls another repository. Keep it a leaf; if you need composition, do it in business logic, not inside the repository.
 - Testing by mocking the repository class in business-logic tests. That hides SQL correctness bugs. Use a real (in-container) PostgreSQL for business-logic tests (see [testing-guide.md](testing-guide.md)).
+- Using positional `%s` parameters with SQLAlchemy. SQLAlchemy expects named `:param` style inside `text()`.
 
 ---
 
@@ -260,10 +286,10 @@ class DeviceRepository:
 
 **Problem.** Today Fluxion supports Apple devices (APNS + MDM). Tomorrow it needs Samsung Knox, maybe Xiaomi. The `action_trigger` Lambda should not care which OEM a device belongs to — it just asks "push this action to this device."
 
-**Solution — provider interface + registry.** A small abstract base class defines the contract; the registry maps `Platform` enum → provider implementation. OEM-specific code lives in `fluxion-oem/modules/<oem>_process_action/`.
+**Solution — provider interface + registry.** A small abstract base class defines the contract; the registry maps `Platform` enum → provider implementation. OEM-specific code lives in `fluxion-oem-processor/modules/<oem>_process_action/`.
 
 ```python
-# fluxion-oem/modules/apple_process_action/provider.py
+# fluxion-oem-processor/modules/apple_process_action/provider.py
 class OEMProvider(ABC):
     @abstractmethod
     def push_action(self, device: Device, action: Action) -> PushResult: ...
@@ -297,8 +323,15 @@ PROVIDERS: dict[Platform, type[OEMProvider]] = {Platform.APPLE: AppleProvider}
 3. **External response.** APNS / OEM responses parsed into Pydantic before the code trusts them.
 4. **Output.** Before returning from a handler, serialize via Pydantic (`.model_dump()`) — never hand-craft the response dict.
 
+**Placement rule — no `dto.py` file.** Models live **inline** in the file that owns the boundary:
+- Input / output request models → `handler.py` (top of file, before the dispatcher).
+- DB row models → `db.py` (next to the repository that returns them).
+- External API response models (APNS, OEM) → the same file that calls the external API.
+
+This keeps the boundary and its schema in one place; a reviewer sees intent + shape together.
+
 ```python
-# modules/device_resolver/dto.py
+# modules/device_resolver/src/handler.py — inline input/output
 class EnrollDeviceInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     serial: str = Field(min_length=10, max_length=20, pattern=r"^[A-Z0-9]+$")
@@ -423,15 +456,16 @@ These have caused real bugs in similar systems. Catch them in review.
 
 **Problem.** Row-level multi-tenancy (every table has `tenant_id`, every query has `WHERE tenant_id = %s`) puts the isolation invariant in developer discipline. One missing `WHERE` clause leaks data across tenants. Audits, backups, and per-tenant archiving are awkward.
 
-**Solution — one PostgreSQL schema per tenant.** Each tenant gets `tenant_{slug}` (e.g., `tenant_acme`, `tenant_fpt`). All business tables (devices, actions, chats, etc.) live inside the tenant schema. A separate `meta` schema holds tenant registry + shared enums.
+**Solution — one PostgreSQL schema per tenant.** Each tenant gets `tenant_{slug}` (e.g., `tenant_acme`, `tenant_fpt`). All business tables (devices, actions, chats, etc.) live inside the tenant schema. The `public` schema holds the tenant registry + shared global data.
 
 ```
 postgres (single database)
-├── meta                      # Shared: tenants, platforms, message_templates (global)
-│   ├── tenants               # (id, slug, schema_name, created_at, ...)
-│   ├── platforms             # Seeded enum: apple, samsung, xiaomi, ...
+├── public                       # Shared: tenant registry + global lookup data
+│   ├── t_tenant_schema_mapping  # (tenant_id, schema_name, created_at, ...)
+│   ├── platforms                # Seeded enum: apple, samsung, xiaomi, ...
+│   ├── message_templates        # Global template library
 │   └── ...
-├── tenant_acme               # Per-tenant business data
+├── tenant_acme                  # Per-tenant business data
 │   ├── devices
 │   ├── device_state_transitions
 │   ├── state_policies
@@ -448,12 +482,13 @@ postgres (single database)
 Every query uses `{tenant_schema}.<table>` — never an unqualified table name, never `SET search_path`.
 
 ```python
-# Correct — explicit schema:
-cur.execute(f"SELECT * FROM {schema}.devices WHERE id = %s", (id,))
+# Correct — explicit schema with SQLAlchemy text():
+query = text(f"SELECT * FROM {schema}.devices WHERE id = :id")
+conn._execute(query, {"id": id})
 
 # Wrong — implicit via search_path:
-cur.execute("SET search_path TO tenant_acme, public")
-cur.execute("SELECT * FROM devices WHERE id = %s", (id,))
+conn._execute(text("SET search_path TO tenant_acme, public"))
+conn._execute(text("SELECT * FROM devices WHERE id = :id"), {"id": id})
 ```
 
 Explicit beats implicit: the query read in isolation tells you which tenant it touches. `search_path` is connection-level state that pooled connections can leak across tenants.
@@ -462,11 +497,24 @@ Explicit beats implicit: the query read in isolation tells you which tenant it t
 
 The `tenant_schema` value flows:
 1. Client authenticates with Cognito — token carries `tenant_id` claim.
-2. Lambda auth decorator reads the claim, looks up `meta.tenants` to fetch `schema_name`.
-3. Resolved `tenant_schema` is passed into repositories at construction.
-4. Repositories f-string-interpolate it into SQL.
+2. Handler receives `tenant_id` from the auth context.
+3. Handler calls `Connection.get_schema_name(tenant_id)` — which queries `public.t_tenant_schema_mapping` to resolve the schema name, regex-validates the result (`^tenant_[a-z0-9_]{1,40}$`), and returns it.
+4. Resolved `tenant_schema` is passed into repositories at construction.
+5. Repositories f-string-interpolate it into SQL.
 
-**Schema name must be validated** before any f-string use: `re.fullmatch(r"tenant_[a-z0-9_]{1,40}", schema_name)`. Never accept `tenant_schema` from request arguments; only from the validated auth claim path.
+**Schema name must be validated** before any f-string use — the regex check lives inside `Connection.get_schema_name`, not in individual handlers. Never accept `tenant_schema` from request arguments; only from the validated auth claim path.
+
+```python
+# Typical request flow inside a handler:
+tenant_id = event["identity"]["claims"]["tenant_id"]
+conn = Connection()
+try:
+    schema = conn.get_schema_name(tenant_id)     # regex-validated inside
+    devices = DeviceRepository(conn, schema).list_all()
+    return {"devices": [d.model_dump() for d in devices]}
+finally:
+    conn.close()
+```
 
 ### 11.3 Migrations
 
@@ -486,7 +534,8 @@ Alembic runs migrations against every tenant schema in sequence (and against `me
 - Building a query string in Python and injecting `tenant_schema` without validation. Always validate with the regex in §11.2.
 - Sharing a pooled connection across tenants using `SET search_path`. Don't — pool connections with no per-tenant state, pass `tenant_schema` in SQL.
 - Forgetting to register the new table in the template schema. New DDL must go into `tenant_template` + every existing tenant schema (Alembic handles the latter).
-- Putting tenant-global data (message templates, TACs) inside a tenant schema. Global data belongs in `meta`.
+- Putting tenant-global data (message templates, TACs) inside a tenant schema. Global data belongs in `public`.
+- Resolving `tenant_id → schema_name` at every query. Resolve once per request and pass the result into repositories — `Connection.get_schema_name` is one DB round-trip that should happen at handler boundary, not inside every data-access method.
 
 ---
 
