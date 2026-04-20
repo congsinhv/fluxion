@@ -205,6 +205,7 @@ Shared primitives (VPC, base networking, IAM roles) live in whichever repo boots
 │   │   ├── outputs.tf                # Exported values
 │   │   ├── locals.tf                 # Computed values
 │   │   ├── versions.tf               # Provider + terraform version pinning
+│   │   ├── <component>.tf            # Split large main.tf by resource category
 │   │   └── README.md                 # Inputs / Outputs / Example usage
 │   └── ...
 ├── envs/
@@ -225,6 +226,29 @@ Shared primitives (VPC, base networking, IAM roles) live in whichever repo boots
 - **Cross-repo dependencies via SSM:** producing repo writes an `aws_ssm_parameter`; consuming repo reads via `data "aws_ssm_parameter"`. Never share Terraform state.
 - **`main.tf` > 300 LOC** → split by resource category (`iam.tf`, `networking.tf`) or extract a sub-module.
 - **README required** on every module. Use `terraform-docs` to auto-generate Inputs/Outputs tables.
+
+### 5.4 Existing Modules
+
+#### `fluxion-backend/terraform/modules/network` ([#30])
+
+Provisions the core networking layer for Fluxion environments. Managed by a single environment (`envs/dev`); others inherit via SSM cross-stack reads.
+
+**Resources:**
+- VPC + DNS hostnames (default `10.0.0.0/16`)
+- 2 public + 2 private subnets (one pair per AZ, 2 AZs fixed)
+- Internet Gateway + public route table
+- **fck-nat** ARM instance (t4g.nano, ~$3/mo) with static ENI + EIP as NAT replacement (vs. $32/mo AWS-managed NAT Gateway)
+- Private route table routing outbound traffic through NAT ENI
+- 3 security groups: Lambda → RDS Proxy → RDS ingress chain
+
+**SSM exports:** `/fluxion/{env}/network/{vpc-id, vpc-cidr, public/private-subnet-ids, lambda-sg-id, rds-sg-id, rds-proxy-sg-id, nat-eip}`
+
+**Sub-files:**
+- `networking.tf` — VPC, subnets, route tables, IGW
+- `nat.tf` — fck-nat instance, ENI, EIP, ASG
+- `security-groups.tf` — Lambda, RDS Proxy, RDS SGs and ingress rules
+
+**Example usage:** See module README (envs/dev wires it; see Phase 3 of [#30]).
 
 ---
 
@@ -278,6 +302,7 @@ Deviations must not leak into tests or contracts — those follow the rules stri
 - [code-standards.md](code-standards.md) — file naming, general rules.
 - [design-patterns.md](design-patterns.md) — intra-module patterns (resolver, repository, factory).
 - [testing-guide.md](testing-guide.md) — test file placement.
+- `fluxion-backend/terraform/modules/network/README.md` — network module design (VPC, subnets, fck-nat).
 - **Wiki T4** — System architecture design (module boundaries visualized).
 - **Wiki T5** — API contract and ER diagram (informs schema and migration layout).
 - Research: [researcher-260419-1545-file-naming-conventions-2026.md](../plans/reports/researcher-260419-1545-file-naming-conventions-2026.md).
@@ -288,4 +313,5 @@ Deviations must not leak into tests or contracts — those follow the rules stri
 
 | Version | Date | Change |
 |---------|------|--------|
+| v1.1 | 2026-04-20 | Document Terraform modules section (§5.4); add network module reference (#30). |
 | v1.0 | 2026-04-19 | Initial release (#61). |
