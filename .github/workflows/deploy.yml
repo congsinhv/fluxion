@@ -56,9 +56,10 @@ jobs:
             local dir="$1"
             if [ ! -d "$dir" ]; then echo "[]"; return; fi
             # Enumerate direct subdirs containing pyproject.toml, skip underscore-prefixed.
+            # grep || true: empty matches exit 1, which aborts under pipefail.
             find "$dir" -mindepth 2 -maxdepth 2 -name pyproject.toml 2>/dev/null \
               | sed -E 's|.*/([^/]+)/pyproject\.toml$|\1|' \
-              | grep -v '^_' \
+              | { grep -v '^_' || true; } \
               | jq -R -s -c 'split("\n") | map(select(length > 0))'
           }
           backend=$(list_modules fluxion-backend/modules)
