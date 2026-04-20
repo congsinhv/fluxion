@@ -20,6 +20,9 @@ dev = [
     "moto[all]>=5.0",
     "sqlalchemy>=2.0",  # mypy needs this to type-check db.py stubs
     "types-sqlalchemy>=1.4",
+    # Migration tooling (T6 — issue #31). Workspace-level, not per-Lambda.
+    "alembic>=1.13",
+    "psycopg2-binary>=2.9",
 ]
 
 # ---------------------------------------------------------------------------
