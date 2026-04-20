@@ -273,8 +273,101 @@ Idempotency key sourced from:
 
 ---
 
-## 8. Change Log
+## 8. CI/CD Pipeline & Deployment
+
+### 8.1 GitHub Actions Workflow (`deploy.yml`)
+
+Two-phase deployment strategy: plan-only on PR; auto-apply on merge to main.
+
+**On `push: main`** (auto-apply, no manual approval):
+```
+lint (flake8) ─→ test (pytest) ─→ terraform apply ─→ docker push matrix
+```
+
+**On `pull_request`** (plan-only, gates merge):
+```
+lint (flake8) ─→ test (pytest) ─→ terraform plan (artifact) ─→ [blocked: no apply/push]
+```
+
+### 8.2 Jobs & Composite Actions
+
+| Job | Inputs | Outputs | Description |
+|-----|--------|---------|-------------|
+| `lint` | source: `fluxion-backend/modules/*/` | pass/fail | Runs `flake8 --ignore=E501` on all Lambda modules |
+| `test` | pytest tests | coverage ≥70% | Validates all unit + integration tests pass |
+| `terraform` | `.tfvars`, Cognito/ECR modules | plan artifact (PR) / resources live (push:main) | `plan` on PR; `apply -auto-approve` on push:main |
+| `docker` (matrix) | ECR repo list, Lambda module source | image tags pushed to ECR | Builds & pushes per-Lambda image; scans repo list from terraform outputs |
+
+**Composite Actions:**
+1. **`aws-oidc-login`** — Assumes `fluxion-backend-gha-deploy` role via GitHub OIDC, exports AWS credentials
+2. **`terraform-apply`** — Runs `tf init`, `tf plan`, `tf apply` with var files; supports dry-run mode (PR only)
+3. **`docker-build-push-ecr`** — Builds single Lambda image, tags with module name + commit SHA, pushes to ECR repo
+
+### 8.3 OIDC & IAM Role
+
+**GitHub OIDC Provider** (AWS):
+- Issuer: `https://token.actions.githubusercontent.com`
+- Audience: `sts.amazonaws.com`
+- Trust policy scoped to:
+  - `repo:congsinhv/fluxion:ref:refs/heads/main` — auto-apply on push:main
+  - `repo:congsinhv/fluxion:pull_request` — plan-only for PR validation
+
+**IAM Role: `fluxion-backend-gha-deploy`**
+- Permissions: Terraform state (S3, DynamoDB lock), RDS, ECR, Cognito, Secrets Manager, SSM Parameter Store
+- No static AWS keys in GitHub secrets — OIDC-only
+
+### 8.4 ECR Module & Auto-Discovery
+
+**ECR Module** (`terraform/modules/ecr/`) scans `fluxion-backend/modules/` for directories containing `handler.py` (Lambda marker) and creates:
+
+```
+ECR Repository per Lambda module:
+  fluxion-backend-device-resolver
+  fluxion-backend-action-resolver
+  fluxion-backend-apple-process-action
+  ...
+```
+
+**Lifecycle Policy:** Keep last 10 images per repo; delete older. This prevents ECR cost explosion and maintains deployment rollback window.
+
+### 8.5 Deployment Flow (Manual Invocation)
+
+After merge to main, GitHub Actions triggers automatically:
+
+```
+1. Pull code & mount AWS credentials (OIDC role assumption)
+2. Lint: flake8 on all modules
+3. Test: pytest all modules
+4. Terraform: 
+   - cd terraform/envs/dev
+   - terraform plan (verify no surprises)
+   - terraform apply -auto-approve (create/update resources)
+5. Docker Build & Push (matrix job):
+   - For each ECR repo created in step 4
+   - Build image: fluxion-backend-{module}:latest
+   - Tag: {ACCOUNT}.dkr.ecr.us-east-1.amazonaws.com/{repo}:latest
+   - Push to ECR (ready for Lambda deployment via CI/CD tool or manual invoke)
+```
+
+### 8.6 Secrets & Environment
+
+**GitHub Secrets:**
+- `AWS_DEPLOY_ROLE_ARN` — IAM role ARN for OIDC assumption
+
+**Environment Variables (in workflow file):**
+- `AWS_REGION = "us-east-1"`
+- `TF_VAR_environment = "dev"`
+- `REGISTRY_PREFIX = "{ACCOUNT}.dkr.ecr.us-east-1.amazonaws.com"`
+
+**SSM Parameter Exports** (Cognito module):
+- `/{env}/cognito/user_pool_id` — Lambda config.py reads at startup
+- `/{env}/cognito/app_client_id` — Injected into app initialization
+
+---
+
+## 9. Change Log
 
 | Version | Date | Change |
 |---------|------|--------|
+| v1.1 | 2026-04-20 | Added CI/CD section (§8): GitHub OIDC, deploy.yml workflow, ECR auto-discovery, docker matrix push (#32, pending merge). |
 | v1.0 | 2026-04-20 | Initial release. Documents 3-revision Alembic chain, accesscontrol + 16 per-tenant tables, provisioning procs, FSM design (#31). |
