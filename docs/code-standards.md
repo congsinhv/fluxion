@@ -417,19 +417,59 @@ WIP                                     # not descriptive
 
 Commit messages, PR descriptions, code comments must not reference AI assistants (Claude, Copilot, ChatGPT). Describe the change, not the author.
 
-### 6.3 Pull Request Conventions
+### 6.3 Branch-per-Ticket Workflow (Mandatory)
 
-- **Title matches first commit** subject.
-- **Body must cite docs sections** when rules apply (e.g., "Follows docs/code-standards.md §3.4 for Pydantic boundary validation").
-- **Link the ticket** (`Closes #34`).
-- **Test plan** as checkbox list.
-- **No `--no-verify` / hook skip** unless explicit reviewer approval.
+Every ticket gets its own branch. No direct commits to `main` except exceptional hotfixes (documented post-hoc).
+
+**Flow:**
+
+1. Create branch from `main`: `git checkout main && git pull && git checkout -b feature/29-monorepo-scaffold`
+2. Commit **one commit per phase** while implementing — each phase in the plan becomes one commit. Keeps history reviewable and bisect-friendly.
+3. Push branch early (even before full completion): `git push -u origin feature/29-monorepo-scaffold`
+4. Open PR when all phases done (or as draft earlier to share progress).
+5. Merge via GitHub (squash or merge commit — project-level choice, currently squash to keep main history linear).
+6. Delete branch after merge.
 
 ### 6.4 Branch Naming
 
-Format: `<type>/<ticket>-<slug>`
+Format: `<type>/<ticket-number>-<short-kebab-slug>`
 
-Examples: `feat/34-device-resolver`, `fix/50-apns-retry`, `refactor/60-extract-fsm`.
+Types:
+
+| Type | When |
+|------|------|
+| `feature/` | New capability, matches a `[T*]` ticket |
+| `bugfix/` | Fix a reported bug |
+| `hotfix/` | Urgent production fix branching off `main` |
+| `chore/` | Tooling / config / docs with no ticket number — use `chore/short-slug` (no ticket segment) |
+| `refactor/` | Internal restructuring, no behaviour change |
+
+**Examples:**
+
+```
+feature/29-monorepo-scaffold
+feature/34-device-resolver
+bugfix/50-apns-retry-backoff
+hotfix/schema-graphql-syntax-error
+refactor/60-extract-fsm-tables
+chore/bump-ruff-version
+```
+
+Slug ≤ 30 chars, kebab-case, omit filler words.
+
+### 6.5 Pull Request Conventions
+
+- **Title** = `[#<ticket>]: <subject>` (same format as commits; copy first commit's subject).
+- **Body** must contain:
+  - Summary of change (2-5 bullets).
+  - Link to plan: `Plan: plans/YYMMDD-HHMM-<slug>/plan.md`.
+  - Docs citations (`Follows docs/code-standards.md §3.4`).
+  - Test plan as checkbox list.
+  - Closing footer: `Closes #<ticket>`.
+- **Draft PRs** are encouraged for work-in-progress — flip to ready when all phases landed + CI green.
+- **Commit-per-phase retained** after squash by including phase list in PR body.
+- **No `--no-verify` / hook skip** unless explicit reviewer approval in PR comment.
+- **No force-push to main** ever. Force-push to own feature branch is OK before merge; always use `--force-with-lease`.
 
 ---
 
