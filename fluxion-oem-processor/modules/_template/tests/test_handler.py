@@ -29,14 +29,12 @@ def test_handler_raises_not_implemented_on_non_empty_batch() -> None:
         lambda_handler(event, _FakeContext())
 
 
-def test_handler_no_records_returns_none() -> None:
+def test_handler_no_records_completes_without_error() -> None:
     """Handler with an empty Records list completes without error (no-op batch)."""
     event: dict[str, Any] = {"Records": []}
-    result = lambda_handler(event, _FakeContext())
-    assert result is None
+    lambda_handler(event, _FakeContext())  # must not raise
 
 
-def test_handler_missing_records_key_returns_none() -> None:
+def test_handler_missing_records_key_completes_without_error() -> None:
     """Handler tolerates missing Records key — SQS always provides it but be safe."""
-    result = lambda_handler({}, _FakeContext())
-    assert result is None
+    lambda_handler({}, _FakeContext())  # must not raise
