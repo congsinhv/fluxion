@@ -1,0 +1,6 @@
+# GraphQL schema for Fluxion backend.
+# This file is the contract between fluxion-backend and fluxion-frontend.
+# Frontend codegen reads this file to generate TypeScript types and hooks.
+#
+# Populated in ticket #33.
+# See docs/module-structure.md §6 for cross-stack contract rules.

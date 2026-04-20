@@ -1,0 +1,17 @@
+# Base image for all OEM worker Lambda functions.
+# Per-module Dockerfiles inherit from this image via:
+#   FROM fluxion-oem-processor/worker-base:latest
+#
+# Build this base first, then build individual module images.
+FROM public.ecr.aws/lambda/python:3.12
+
+# Install uv for fast dependency resolution
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+# Disable uv's virtual env creation inside the Lambda image —
+# packages install directly into the Lambda runtime Python.
+ENV UV_SYSTEM_PYTHON=1 \
+    UV_NO_CACHE=1
+
+# Module pyproject.toml is COPY'd by the child Dockerfile before uv sync.
+# CMD is set by the child Dockerfile (e.g. CMD ["handler.lambda_handler"]).
