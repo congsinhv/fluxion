@@ -38,6 +38,12 @@ module "database" {
   enable_rds_proxy     = var.enable_rds_proxy
 }
 
+module "auth" {
+  source               = "../../modules/auth"
+  resource_name_prefix = var.resource_name_prefix
+  env                  = var.env
+}
+
 locals {
   ssm_prefix = "/fluxion/${var.env}"
 
@@ -94,5 +100,33 @@ resource "aws_ssm_parameter" "rds_secret_arn" {
   name  = "${local.ssm_prefix}/rds/secret-arn"
   type  = "String"
   value = nonsensitive(module.database.secret_arn)
+  tags  = local.ssm_tags
+}
+
+resource "aws_ssm_parameter" "cognito_user_pool_id" {
+  name  = "${local.ssm_prefix}/auth/user-pool-id"
+  type  = "String"
+  value = module.auth.user_pool_id
+  tags  = local.ssm_tags
+}
+
+resource "aws_ssm_parameter" "cognito_user_pool_arn" {
+  name  = "${local.ssm_prefix}/auth/user-pool-arn"
+  type  = "String"
+  value = module.auth.user_pool_arn
+  tags  = local.ssm_tags
+}
+
+resource "aws_ssm_parameter" "cognito_client_id" {
+  name  = "${local.ssm_prefix}/auth/client-id"
+  type  = "String"
+  value = module.auth.client_id
+  tags  = local.ssm_tags
+}
+
+resource "aws_ssm_parameter" "cognito_issuer_url" {
+  name  = "${local.ssm_prefix}/auth/issuer-url"
+  type  = "String"
+  value = module.auth.issuer_url
   tags  = local.ssm_tags
 }
