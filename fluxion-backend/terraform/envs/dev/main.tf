@@ -52,6 +52,29 @@ locals {
     Env       = var.env
     ManagedBy = "terraform"
   }
+
+  # Auto-discover Lambda modules (skip underscore-prefixed templates).
+  lambda_module_paths = fileset("${path.module}/../../../modules", "*/pyproject.toml")
+  lambda_module_names = [
+    for p in local.lambda_module_paths :
+    dirname(p) if !startswith(dirname(p), "_")
+  ]
+}
+
+module "ecr" {
+  source               = "../../modules/ecr"
+  resource_name_prefix = var.resource_name_prefix
+  repository_names     = local.lambda_module_names
+  tags                 = local.ssm_tags
+}
+
+resource "aws_ssm_parameter" "ecr_repo_urls" {
+  for_each = module.ecr.repository_urls
+
+  name  = "${local.ssm_prefix}/ecr/${each.key}"
+  type  = "String"
+  value = each.value
+  tags  = local.ssm_tags
 }
 
 resource "aws_ssm_parameter" "vpc_id" {
