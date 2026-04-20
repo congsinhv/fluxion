@@ -132,7 +132,6 @@ jobs:
     needs: [detect-changes, lint-test-backend]
     if: needs.detect-changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
-    environment: dev
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -151,7 +150,6 @@ jobs:
     needs: [detect-changes, lint-test-oem]
     if: needs.detect-changes.outputs.oem == 'true'
     runs-on: ubuntu-latest
-    environment: dev
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
