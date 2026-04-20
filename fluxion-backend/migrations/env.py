@@ -1,19 +1,26 @@
 """Alembic environment — reads DATABASE_URI from environment.
 
-Standard Alembic env.py skeleton. Real migration logic (multi-tenant schema
-iteration) will be added in ticket #31. For now this supports single-schema
-online migrations used during development.
+Multi-tenant aware. Migrations are raw-SQL (no SQLAlchemy ORM), so
+`target_metadata = None` stays. Helper `iter_active_tenant_schemas` exposes
+the `accesscontrol.tenants` registry to future ALTER migrations that need
+to loop DDL across every tenant schema.
 
-See docs/code-standards.md §5.2 for migration style rules.
+See docs/design-patterns.md §11 (tenant-per-schema) and
+docs/code-standards.md §5.2 (migration style).
 """
 
 from __future__ import annotations
 
 import os
 from logging.config import fileConfig
+from typing import TYPE_CHECKING
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import engine_from_config, pool, text
+from sqlalchemy.exc import ProgrammingError
+
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Connection
 
 # ---------------------------------------------------------------------------
 # Alembic Config — gives access to values in alembic.ini
@@ -29,11 +36,33 @@ config.set_main_option("sqlalchemy.url", database_uri)
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# target_metadata: set to your SQLAlchemy MetaData object to enable
-# autogenerate support. Left as None until models are defined in #31.
+# target_metadata: raw-SQL migrations only — autogenerate not used.
 target_metadata = None
 
 
+# ---------------------------------------------------------------------------
+# Multi-tenant helper
+# ---------------------------------------------------------------------------
+def iter_active_tenant_schemas(conn: Connection) -> list[str]:
+    """Return schema_name for all enabled rows in `accesscontrol.tenants`.
+
+    Used by future ALTER migrations to loop DDL across every tenant schema.
+    Returns [] if `accesscontrol.tenants` does not yet exist (pre-0001 state)
+    so first-run migrations do not crash.
+    """
+    try:
+        result = conn.execute(
+            text("SELECT schema_name FROM accesscontrol.tenants WHERE enabled ORDER BY id")
+        )
+    except ProgrammingError:
+        # accesscontrol schema / tenants table not yet created
+        return []
+    return [row[0] for row in result.fetchall()]
+
+
+# ---------------------------------------------------------------------------
+# Migration runners
+# ---------------------------------------------------------------------------
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode (no DB connection required).
 

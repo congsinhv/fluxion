@@ -423,24 +423,33 @@ These have caused real bugs in similar systems. Catch them in review.
 
 **Problem.** Row-level multi-tenancy (every table has `tenant_id`, every query has `WHERE tenant_id = %s`) puts the isolation invariant in developer discipline. One missing `WHERE` clause leaks data across tenants. Audits, backups, and per-tenant archiving are awkward.
 
-**Solution — one PostgreSQL schema per tenant.** Each tenant gets `tenant_{slug}` (e.g., `tenant_acme`, `tenant_fpt`). All business tables (devices, actions, chats, etc.) live inside the tenant schema. A separate `meta` schema holds tenant registry + shared enums.
+**Solution — one PostgreSQL schema per tenant.** Each tenant gets a bare schema name (e.g., `dev1`, `acme`, `fpt`). All 16 business tables (devices, actions, chats, etc.) live inside the tenant schema. A separate `accesscontrol` schema holds cross-tenant identity + authorization; `public` owns provisioning procedures.
 
 ```
 postgres (single database)
-├── meta                      # Shared: tenants, platforms, message_templates (global)
-│   ├── tenants               # (id, slug, schema_name, created_at, ...)
-│   ├── platforms             # Seeded enum: apple, samsung, xiaomi, ...
-│   └── ...
-├── tenant_acme               # Per-tenant business data
+├── accesscontrol             # Shared: tenants registry, users, permissions
+│   ├── tenants               # (id, schema_name, enabled, created_at, ...)
+│   ├── users                 # (id, email, cognito_sub, name, enabled, ...)
+│   ├── permissions           # (id, code, description)
+│   └── users_permissions     # (id, user_id, permission_id, tenant_id, ...)
+├── public                    # Provisioning procedures
+│   ├── create_tenant_schema(text)      # Creates schema + 16 business tables
+│   └── create_default_tenant_data(text) # Seeds FSM, brands, tacs, templates
+├── dev1                      # Per-tenant business data (16 tables)
 │   ├── devices
-│   ├── device_state_transitions
-│   ├── state_policies
-│   ├── action_logs
-│   ├── chats
-│   └── ...
-├── tenant_fpt
-│   └── (same tables as tenant_acme)
-└── ...
+│   ├── device_informations
+│   ├── device_tokens
+│   ├── action_executions
+│   ├── services, states, policies, actions
+│   ├── milestones, brands, tacs
+│   ├── chat_sessions, chat_messages
+│   ├── message_templates
+│   ├── batch_actions, batch_device_actions
+│   └── [12 indexes per table]
+├── acme
+│   └── (same 16 tables as dev1)
+└── fpt
+    └── (same 16 tables as dev1)
 ```
 
 ### 11.1 Schema-Qualified SQL (Mandatory)
@@ -462,11 +471,11 @@ Explicit beats implicit: the query read in isolation tells you which tenant it t
 
 The `tenant_schema` value flows:
 1. Client authenticates with Cognito — token carries `tenant_id` claim.
-2. Lambda auth decorator reads the claim, looks up `meta.tenants` to fetch `schema_name`.
+2. Lambda auth decorator reads the claim, looks up `accesscontrol.tenants` to fetch `schema_name`.
 3. Resolved `tenant_schema` is passed into repositories at construction.
 4. Repositories f-string-interpolate it into SQL.
 
-**Schema name must be validated** before any f-string use: `re.fullmatch(r"tenant_[a-z0-9_]{1,40}", schema_name)`. Never accept `tenant_schema` from request arguments; only from the validated auth claim path.
+**Schema name must be validated** before any f-string use: `re.fullmatch(r"^[a-z][a-z0-9_]{0,39}$", schema_name)` (bare names like `dev1`, `acme`; no prefix). Never accept `tenant_schema` from request arguments; only from the validated auth claim path.
 
 ### 11.3 Migrations
 
@@ -485,8 +494,8 @@ Alembic runs migrations against every tenant schema in sequence (and against `me
 
 - Building a query string in Python and injecting `tenant_schema` without validation. Always validate with the regex in §11.2.
 - Sharing a pooled connection across tenants using `SET search_path`. Don't — pool connections with no per-tenant state, pass `tenant_schema` in SQL.
-- Forgetting to register the new table in the template schema. New DDL must go into `tenant_template` + every existing tenant schema (Alembic handles the latter).
-- Putting tenant-global data (message templates, TACs) inside a tenant schema. Global data belongs in `meta`.
+- Forgetting to add DDL to the provisioning procedure. New per-tenant tables must be added to `public.create_tenant_schema()` (line ~57 in migrations/versions/4768d32c8037*), and new seed data to `public.create_default_tenant_data()` (line ~326).
+- Putting tenant-global data (message templates, TACs) inside a tenant schema. These are already per-tenant (seeded in each schema); truly cross-tenant data belongs in `accesscontrol`.
 
 ---
 
@@ -522,4 +531,5 @@ If your problem is not in the table, solving it with a pattern is probably prema
 
 | Version | Date | Change |
 |---------|------|--------|
+| v1.1 | 2026-04-20 | Updated §11 (tenant-per-schema): corrected schema naming from `tenant_{slug}` to bare names (`dev1`, `acme`); changed `meta` schema ref to `accesscontrol`; clarified 16 per-tenant business tables + provisioning proc structure (#31). |
 | v1.0 | 2026-04-19 | Initial release (#61). |
