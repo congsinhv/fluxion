@@ -20,16 +20,19 @@ This feature requires **Terraform >= 1.10**.
 ## Step-by-step
 
 1. Change into the bootstrap directory:
+
    ```
    cd terraform/bootstrap
    ```
 
 2. Initialise with local state:
+
    ```
    terraform init
    ```
 
 3. Create the S3 bucket:
+
    ```
    terraform apply -var=resource_name_prefix=fluxion-frontend
    ```
@@ -37,11 +40,13 @@ This feature requires **Terraform >= 1.10**.
 4. Copy the `state_bucket` output value — you will need it in step 6.
 
 5. Change into the dev environment directory:
+
    ```
    cd ../envs/dev
    ```
 
 6. Initialise the remote backend (substitute the bucket name from step 4):
+
    ```
    terraform init -backend-config="bucket=<state_bucket>"
    ```
