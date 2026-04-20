@@ -76,6 +76,7 @@ ignore = [
 "migrations/*" = [
     "D",       # generated migration files exempt from docstring rules
     "INP001",  # implicit namespace package — migrations/ is not a package
+    "S608",    # SQL-in-f-string: procs interpolate only compile-time literals (e.g. regex pattern)
 ]
 "modules/_template/src/config.py" = [
     "ERA001",  # template file uses instructional comments that look like code

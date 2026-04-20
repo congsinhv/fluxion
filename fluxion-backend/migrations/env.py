@@ -44,7 +44,7 @@ target_metadata = None
 # Multi-tenant helper
 # ---------------------------------------------------------------------------
 def iter_active_tenant_schemas(conn: Connection) -> list[str]:
-    """Return schema_name for all active rows in `accesscontrol.tenants`.
+    """Return schema_name for all enabled rows in `accesscontrol.tenants`.
 
     Used by future ALTER migrations to loop DDL across every tenant schema.
     Returns [] if `accesscontrol.tenants` does not yet exist (pre-0001 state)
@@ -52,9 +52,7 @@ def iter_active_tenant_schemas(conn: Connection) -> list[str]:
     """
     try:
         result = conn.execute(
-            text(
-                "SELECT schema_name FROM accesscontrol.tenants WHERE status = 'active' ORDER BY id"
-            )
+            text("SELECT schema_name FROM accesscontrol.tenants WHERE enabled ORDER BY id")
         )
     except ProgrammingError:
         # accesscontrol schema / tenants table not yet created
