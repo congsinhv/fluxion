@@ -1,0 +1,23 @@
+[project]
+name = "lambda-template"
+version = "0.1.0"
+requires-python = ">=3.12"
+# Runtime deps for every Lambda resolver/worker.
+# Copy this list when scaffolding a new Lambda from this template.
+dependencies = [
+    "pydantic>=2.9",
+    "aws-lambda-powertools[all]>=3.5",
+    "sqlalchemy>=2.0",
+    "psycopg2-binary>=2.9",
+]
+
+[tool.pytest.ini_options]
+# Mirror the Lambda runtime: src/ contents are copied flat into LAMBDA_TASK_ROOT.
+# Tests import the same way: `from config import logger` (no `src.` prefix).
+pythonpath = ["src"]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+# Coverage threshold is not enforced on the _template skeleton — db.py and
+# const.py are stubs with no exercisable logic until a real Lambda is scaffolded.
+# Real Lambda modules set --cov-fail-under=80 here.
+addopts = "--cov=src --cov-report=term-missing"

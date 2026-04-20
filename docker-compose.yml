@@ -1,0 +1,55 @@
+# Local dev stack for Fluxion.
+# Boots PostgreSQL 16 (primary data store) and LocalStack (SNS/SQS/S3/Secrets/SSM mocks).
+# Usage: docker compose up -d   |   docker compose down -v (wipes volumes).
+
+name: fluxion-dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: fluxion-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-fluxion}
+      POSTGRES_USER: ${POSTGRES_USER:-fluxion}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fluxion_dev}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fluxion} -d ${POSTGRES_DB:-fluxion}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - fluxion-dev
+
+  localstack:
+    image: localstack/localstack:3
+    container_name: fluxion-localstack
+    environment:
+      SERVICES: sns,sqs,s3,secretsmanager,ssm
+      DEBUG: "0"
+      LS_LOG: warn
+      PERSISTENCE: "1"
+      LOCALSTACK_AUTH_TOKEN: ${LOCALSTACK_AUTH_TOKEN:-}
+    ports:
+      - "${LOCALSTACK_PORT:-4566}:4566"
+    volumes:
+      - localstack:/var/lib/localstack
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - fluxion-dev
+
+volumes:
+  pgdata:
+  localstack:
+
+networks:
+  fluxion-dev:
+    driver: bridge

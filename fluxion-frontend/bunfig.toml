@@ -1,0 +1,10 @@
+# Bun configuration for fluxion-frontend
+# https://bun.sh/docs/runtime/bunfig
+
+[install]
+# Use exact versions from lockfile
+exact = false
+
+[test]
+# Use vitest via bun run test (not bun test)
+# bun's built-in test runner is not used here; vitest is invoked via npm scripts

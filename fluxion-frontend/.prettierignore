@@ -1,0 +1,14 @@
+# Build + dep artifacts
+node_modules/
+dist/
+build/
+coverage/
+.vite/
+
+# Lockfile (Prettier cannot parse text-format bun.lock)
+bun.lock
+
+# Terraform local state + provider caches
+terraform/**/.terraform/
+terraform/**/terraform.tfstate
+terraform/**/terraform.tfstate.backup

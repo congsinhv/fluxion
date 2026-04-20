@@ -1,0 +1,29 @@
+# Base image for AppSync resolver Lambdas.
+# All modules/_template/Dockerfile (and real resolvers) inherit FROM this tag.
+#
+# Build: docker build -f Dockerfile.resolver -t fluxion-backend/resolver-base:latest .
+# Child usage: FROM fluxion-backend/resolver-base:latest
+
+FROM public.ecr.aws/lambda/python:3.12
+
+# Install uv for fast, reproducible dependency installs.
+# Pin the version to avoid silent upgrades in CI.
+RUN pip install --no-cache-dir "uv==0.6.14"
+
+# Accept the Lambda module directory as a build arg so this base image
+# can install per-Lambda deps at build time. Child Dockerfiles pass this.
+ARG MODULE_DIR=modules/_template
+
+# Copy only the pyproject.toml for dep install (layer cache friendly).
+COPY ${MODULE_DIR}/pyproject.toml ${LAMBDA_TASK_ROOT}/pyproject.toml
+
+# Install runtime deps into the Lambda task root (no dev deps).
+RUN uv pip install --system --no-cache -r ${LAMBDA_TASK_ROOT}/pyproject.toml 2>/dev/null || \
+    uv pip install --system --no-cache \
+        "pydantic>=2.9" \
+        "aws-lambda-powertools[all]>=3.5" \
+        "sqlalchemy>=2.0" \
+        "psycopg2-binary>=2.9"
+
+# CMD is set by each child Dockerfile, e.g.:
+# CMD ["handler.lambda_handler"]

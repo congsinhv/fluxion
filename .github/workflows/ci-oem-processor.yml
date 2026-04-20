@@ -1,0 +1,56 @@
+name: CI — fluxion-oem-processor
+
+on:
+  pull_request:
+    paths:
+      - "fluxion-oem-processor/**"
+      - ".github/workflows/ci-oem-processor.yml"
+  push:
+    branches: [main]
+    paths:
+      - "fluxion-oem-processor/**"
+      - ".github/workflows/ci-oem-processor.yml"
+
+defaults:
+  run:
+    working-directory: fluxion-oem-processor
+
+jobs:
+  lint-and-test:
+    name: lint + typecheck + test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.5.x"
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Sync dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Ruff format check
+        run: uv run ruff format --check .
+
+      - name: Ruff lint
+        run: uv run ruff check .
+
+      - name: Mypy (strict)
+        run: uv run mypy --strict modules/
+
+      - name: Pytest with coverage (per-module)
+        run: |
+          set -e
+          for module_dir in modules/*/; do
+            [ -f "$module_dir/pyproject.toml" ] || continue
+            echo "::group::pytest $module_dir"
+            (cd "$module_dir" && uv run pytest tests/ --cov=src --cov-report=xml --cov-fail-under=0)
+            echo "::endgroup::"
+          done
