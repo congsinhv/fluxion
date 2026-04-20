@@ -80,13 +80,19 @@ bun run build            # production build
 
 ### Terraform (per sub-repo)
 
+Each sub-repo owns its IaC. Modules are reusable; environments wire them via SSM cross-stack reads.
+
 ```bash
 cd fluxion-backend/terraform/bootstrap
 terraform init && terraform apply -var=resource_name_prefix=fluxion-backend
 
 cd ../envs/dev
 terraform init -backend-config="bucket=<from_bootstrap>"
+terraform apply
 ```
+
+**Core modules** (detailed in [docs/module-structure.md §5](docs/module-structure.md#54-existing-modules)):
+- `modules/network` — VPC, subnets, fck-nat (t4g.nano), security groups; outputs to SSM for cross-repo use ([#30])
 
 ## Commit Convention
 
