@@ -5,12 +5,24 @@
 # to a stable network_interface_id. On each boot, the ASG instance runs
 # fck-nat.service which reads /etc/fck-nat.conf and attaches the ENI.
 #
-# SSM AMI path to verify if data source errors appear in Phase 3:
-#   /aws/service/fck-nat/fck-nat-al2023-arm64-latest/amzn2023
+# fck-nat publishes AMIs directly (not via /aws/service/ SSM namespace which
+# is reserved for AWS-first-party). Lookup by publisher account + name pattern.
+# Publisher account: 568608671756 (fck-nat official)
+# Docs: https://fck-nat.dev/stable/deploying/#terraform
 
-# Resolve latest fck-nat AMI for Amazon Linux 2023 ARM64
-data "aws_ssm_parameter" "fck_nat_ami" {
-  name = "/aws/service/fck-nat/fck-nat-al2023-arm64-latest/amzn2023"
+data "aws_ami" "fck_nat" {
+  most_recent = true
+  owners      = ["568608671756"]
+
+  filter {
+    name   = "name"
+    values = ["fck-nat-al2023-*-arm64-ebs"]
+  }
+
+  filter {
+    name   = "architecture"
+    values = ["arm64"]
+  }
 }
 
 # ---------------------------------------------------------------------------
@@ -94,7 +106,7 @@ resource "aws_iam_instance_profile" "fck_nat" {
 
 resource "aws_launch_template" "fck_nat" {
   name_prefix   = "${var.resource_name_prefix}-fck-nat-"
-  image_id      = data.aws_ssm_parameter.fck_nat_ami.value
+  image_id      = data.aws_ami.fck_nat.id
   instance_type = var.fck_nat_instance_type
 
   iam_instance_profile {
