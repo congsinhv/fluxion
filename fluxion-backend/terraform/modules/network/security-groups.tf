@@ -10,7 +10,7 @@
 
 resource "aws_security_group" "lambda" {
   name        = "${var.resource_name_prefix}-sg-lambda"
-  description = "Lambda functions — unrestricted egress, no ingress needed."
+  description = "Lambda functions - unrestricted egress, no ingress needed."
   vpc_id      = aws_vpc.main.id
 
   egress {
@@ -28,7 +28,7 @@ resource "aws_security_group" "lambda" {
 
 resource "aws_security_group" "rds_proxy" {
   name        = "${var.resource_name_prefix}-sg-rds-proxy"
-  description = "RDS Proxy — accept PostgreSQL from Lambda SG only."
+  description = "RDS Proxy - accept PostgreSQL from Lambda SG only."
   vpc_id      = aws_vpc.main.id
 
   ingress {
@@ -46,7 +46,7 @@ resource "aws_security_group" "rds_proxy" {
 
 resource "aws_security_group" "rds" {
   name        = "${var.resource_name_prefix}-sg-rds"
-  description = "RDS — accept PostgreSQL from Lambda SG and RDS Proxy SG."
+  description = "RDS - accept PostgreSQL from Lambda SG and RDS Proxy SG."
   vpc_id      = aws_vpc.main.id
 
   ingress {

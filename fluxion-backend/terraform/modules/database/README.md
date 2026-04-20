@@ -37,7 +37,7 @@ Enable for production workloads where connection pooling and IAM auth are needed
 | `db_username` | `string` | `fluxion_admin` | Master username |
 | `instance_class` | `string` | `db.t3.micro` | RDS instance class |
 | `allocated_storage` | `number` | `20` | Storage in GB |
-| `engine_version` | `string` | `16.3` | PostgreSQL version (pinned) |
+| `engine_version` | `string` | `16.8` | PostgreSQL version (pinned) |
 | `enable_rds_proxy` | `bool` | `false` | Enable RDS Proxy in front of DB |
 | `backup_retention_period` | `number` | `7` | Backup retention days (0 = disabled) |
 
