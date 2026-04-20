@@ -80,6 +80,11 @@ DATABASE_URI=postgresql://user:pass@host/dbname \
 # Generate a new migration
 DATABASE_URI=postgresql://user:pass@host/dbname \
   alembic -c migrations/alembic.ini revision --autogenerate -m "describe_change"
+
+# Full-chain verification (downgrade→upgrade→seed assertions→downgrade)
+# SAFETY: downgrade wipes tenant schemas. NEVER run against production.
+DATABASE_URI=postgresql://user:pass@host/dbname \
+  ./scripts/verify-migrations.sh
 ```
 
 ## References
