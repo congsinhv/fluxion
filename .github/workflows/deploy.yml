@@ -183,7 +183,8 @@ jobs:
           region: ${{ env.AWS_REGION }}
       - uses: ./.github/actions/docker-build-push-ecr
         with:
-          repository: fluxion-backend-${{ matrix.module }}
+          # Matches module "ecr" resource_name_prefix in fluxion-backend/terraform/envs/dev
+          repository: fluxion-dev-${{ matrix.module }}
           context: fluxion-backend
           dockerfile: fluxion-backend/modules/${{ matrix.module }}/Dockerfile
           tag: ${{ github.sha }}
@@ -208,7 +209,8 @@ jobs:
           region: ${{ env.AWS_REGION }}
       - uses: ./.github/actions/docker-build-push-ecr
         with:
-          repository: fluxion-oem-processor-${{ matrix.module }}
+          # Matches oem env resource_name_prefix (to be defined when OEM envs/dev lands)
+          repository: fluxion-oem-dev-${{ matrix.module }}
           context: fluxion-oem-processor
           dockerfile: fluxion-oem-processor/modules/${{ matrix.module }}/Dockerfile
           tag: ${{ github.sha }}
