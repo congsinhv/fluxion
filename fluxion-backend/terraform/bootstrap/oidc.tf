@@ -103,6 +103,7 @@ data "aws_iam_policy_document" "gha_deploy_inline" {
     actions = [
       "cognito-idp:*",
       "ec2:*",
+      "autoscaling:*",
       "rds:*",
       "lambda:*",
       "appsync:*",
