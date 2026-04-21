@@ -1,0 +1,12 @@
+[project]
+name = "smoketest"
+version = "0.1.0"
+requires-python = ">=3.12"
+# Minimal standalone Lambda — used by TC-03 to prove the CI ECR-push matrix.
+# Intentionally has no third-party deps so Dockerfile stays self-contained.
+dependencies = []
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "--cov=src --cov-report=term-missing --cov-fail-under=0"
