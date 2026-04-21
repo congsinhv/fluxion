@@ -13,7 +13,7 @@ data "aws_iam_policy_document" "appsync_logs_trust" {
 resource "aws_iam_role" "appsync_logs" {
   name               = "${var.resource_name_prefix}-appsync-logs"
   assume_role_policy = data.aws_iam_policy_document.appsync_logs_trust.json
-  tags               = var.tags
+  tags               = local.tags
 }
 
 resource "aws_iam_role_policy_attachment" "appsync_logs_push" {
@@ -38,7 +38,7 @@ data "aws_iam_policy_document" "appsync_lambda_trust" {
 resource "aws_iam_role" "appsync_lambda_invoke" {
   name               = "${var.resource_name_prefix}-appsync-lambda-invoke"
   assume_role_policy = data.aws_iam_policy_document.appsync_lambda_trust.json
-  tags               = var.tags
+  tags               = local.tags
 }
 
 data "aws_iam_policy_document" "appsync_lambda_invoke" {

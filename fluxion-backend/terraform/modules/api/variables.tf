@@ -53,6 +53,17 @@ variable "log_field_log_level" {
   }
 }
 
+variable "log_exclude_verbose_content" {
+  type        = bool
+  default     = true
+  description = <<-EOT
+    When true (default), AppSync redacts verbose content (variables,
+    full response payloads) from CloudWatch logs. Keep true in
+    staging/prod to avoid leaking PII (email, serial, UDID, TAC).
+    Set false only for local dev troubleshooting.
+  EOT
+}
+
 variable "tags" {
   type        = map(string)
   default     = {}

@@ -4,5 +4,5 @@
 resource "aws_cloudwatch_log_group" "appsync" {
   name              = "/aws/appsync/apis/${aws_appsync_graphql_api.this.id}"
   retention_in_days = var.log_retention_days
-  tags              = var.tags
+  tags              = local.tags
 }

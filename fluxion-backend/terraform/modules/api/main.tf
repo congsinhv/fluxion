@@ -1,5 +1,14 @@
 locals {
   api_name = "${var.resource_name_prefix}-api"
+
+  default_tags = {
+    Project   = "fluxion"
+    Env       = var.env
+    ManagedBy = "terraform"
+    Component = "appsync-api"
+  }
+
+  tags = merge(local.default_tags, var.tags)
 }
 
 # AppSync GraphQL API — primary auth = Cognito User Pools (UI clients).
@@ -23,10 +32,10 @@ resource "aws_appsync_graphql_api" "this" {
   log_config {
     cloudwatch_logs_role_arn = aws_iam_role.appsync_logs.arn
     field_log_level          = var.log_field_log_level
-    exclude_verbose_content  = false
+    exclude_verbose_content  = var.log_exclude_verbose_content
   }
 
   xray_enabled = false
 
-  tags = var.tags
+  tags = local.tags
 }
