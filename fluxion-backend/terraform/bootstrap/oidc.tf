@@ -89,6 +89,7 @@ data "aws_iam_policy_document" "gha_deploy_inline" {
       "ecr:DeleteRepository",
       "ecr:PutLifecyclePolicy",
       "ecr:GetLifecyclePolicy",
+      "ecr:DeleteLifecyclePolicy",
       "ecr:TagResource",
       "ecr:UntagResource",
       "ecr:ListTagsForResource",
