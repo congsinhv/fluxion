@@ -49,6 +49,34 @@ This feature requires **Terraform >= 1.10**.
 7. From this point, `terraform plan` / `terraform apply` in any `envs/` directory
    stores state remotely in S3 with S3-native locking.
 
+## GitHub Actions OIDC (deploy role)
+
+The bootstrap also provisions a GitHub OIDC identity provider and the
+`fluxion-backend-gha-deploy` IAM role. GitHub Actions workflows assume this
+role via short-lived STS tokens — no static AWS access keys.
+
+After `terraform apply`:
+
+1. Capture the deploy role ARN:
+   ```
+   terraform output -raw deploy_role_arn
+   ```
+
+2. Set it as a GitHub repo secret (requires `gh auth login` with admin scope):
+   ```
+   gh secret set AWS_DEPLOY_ROLE_ARN --body "$(terraform output -raw deploy_role_arn)"
+   ```
+
+3. Verify:
+   ```
+   gh secret list | grep AWS_DEPLOY_ROLE_ARN
+   aws iam get-role --role-name fluxion-backend-gha-deploy
+   ```
+
+Override the allowed repo with `-var=github_repo=owner/name` (default:
+`congsinhv/fluxion`). The trust policy permits pushes to `main`, tag refs, and
+`pull_request` events.
+
 ## Notes
 
 - `terraform/bootstrap/terraform.tfstate` (local) must be kept outside version control —

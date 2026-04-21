@@ -1,0 +1,43 @@
+name: Terraform Plan/Apply
+description: terraform init + plan; apply iff inputs.apply == 'true'.
+
+inputs:
+  working-directory:
+    description: Path containing the Terraform root module.
+    required: true
+  apply:
+    description: When 'true', runs apply after plan. Otherwise plan-only.
+    required: false
+    default: "false"
+  terraform-version:
+    description: Terraform version (must match envs/versions).
+    required: false
+    default: "1.10.0"
+  backend-bucket:
+    description: S3 bucket for remote backend (passed to terraform init -backend-config).
+    required: false
+    default: "fluxion-backend-tfstate"
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ inputs.terraform-version }}
+
+    - name: terraform init
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: terraform init -input=false -backend-config="bucket=${{ inputs.backend-bucket }}"
+
+    - name: terraform plan
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: terraform plan -input=false -out=tfplan -no-color
+
+    - name: terraform apply
+      if: inputs.apply == 'true'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: terraform apply -input=false -auto-approve tfplan

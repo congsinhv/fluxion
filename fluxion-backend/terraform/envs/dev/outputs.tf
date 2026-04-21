@@ -18,3 +18,18 @@ output "ssm_prefix" {
   description = "SSM Parameter Store path prefix for this environment."
   value       = local.ssm_prefix
 }
+
+output "cognito_user_pool_id" {
+  description = "Cognito User Pool ID."
+  value       = module.auth.user_pool_id
+}
+
+output "cognito_client_id" {
+  description = "Cognito admin-console app client ID."
+  value       = module.auth.client_id
+}
+
+output "cognito_issuer_url" {
+  description = "OIDC issuer URL for the Cognito pool (JWT verification)."
+  value       = module.auth.issuer_url
+}

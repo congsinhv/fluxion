@@ -13,6 +13,81 @@
 - Documentation: development-roadmap.md (Phase 1–8 timeline, Phase 3 marked complete)
 - Documentation: project-changelog.md (this file)
 
+---
+
+## [1.1.0] - 2026-04-20
+
+### Feature: Cognito Auth + CI/CD Deploy Pipeline (#32)
+
+**Summary:** GitHub OIDC provider for keyless AWS auth; Cognito User Pool (email username, 12-char strong pw, custom:role); ECR module with Lambda image auto-discovery; `deploy.yml` pipeline: lint → test → tf apply → docker matrix push.
+
+**Added**
+
+#### Terraform Modules
+
+**`terraform/bootstrap/` — OIDC & Deploy Role (applied once, bootstrap-only)**
+- GitHub OIDC provider (OIDC issuer, audience, thumbprint)
+- `fluxion-backend-gha-deploy` IAM role (trust policy scoped to `repo:congsinhv/fluxion:ref:refs/heads/main` + PR refs)
+- Inline policy: Terraform state (S3 + DynamoDB), RDS, ECR, Cognito, Secrets Manager, SSM Parameter Store
+- Environment: `dev` only (stage/prod in future ticket #33)
+
+**`terraform/modules/auth/` — Cognito User Pool + App Client**
+- **User Pool:** Email-based username, 12-character minimum with uppercase + number requirement, MFA optional
+- **Custom Attributes:** `custom:role` (tenant_admin, user, viewer) — initialized at signup
+- **App Client:** SRP-only auth (no plain-password flow), 1-hour access token, 1-hour ID token, 30-day refresh token, ALLOW_USER_PASSWORD_AUTH disabled
+- **SSM Parameter Exports:** `/{env}/cognito/user_pool_id`, `/cognito/app_client_id` for app code injection
+
+**`terraform/modules/ecr/` — ECR Auto-Discovery + Lifecycle**
+- **Auto-Discovery:** Scans `fluxion-backend/modules/` for directories containing `handler.py` (Lambda markers)
+- **Repository per Module:** Creates ECR repo named `fluxion-backend-{module_name}` (e.g., `fluxion-backend-device-resolver`)
+- **Lifecycle Policy:** Keep last 10 images per repo, delete older
+- **Output:** Repository URLs for `deploy.yml` docker push matrix
+
+#### CI/CD Pipeline (GitHub Actions)
+
+**`.github/workflows/deploy.yml` — Push:main → Lint/Test → Tf Apply → Docker Matrix Push**
+
+Workflow structure:
+- **Trigger:** `push:` on `main` (auto-apply, no manual approval)
+- **Jobs:**
+  - `lint`: `flake8 --ignore=E501` on `fluxion-backend/modules/*/` (line length 200+ OK)
+  - `test`: `pytest` on all modules, coverage ≥ 70% (configurable via `.pytest.ini`)
+  - `terraform`: 
+    - `cd terraform/envs/dev && terraform plan`
+    - `cd terraform/envs/dev && terraform apply -auto-approve` (on push main only)
+  - `docker` (matrix job, depends on terraform):
+    - Discovers all ECR repos created in terraform
+    - Builds & pushes per-Lambda image to `{ACCOUNT}.dkr.ecr.us-east-1.amazonaws.com/{repo}:latest`
+    - AWS auth via OIDC (no static keys in secrets)
+
+**PR Flow:** Lint + test + tf plan only (no apply, no docker push).
+
+**Composite Actions** (`.github/actions/`):
+1. `aws-oidc-login/` — Assumes `fluxion-backend-gha-deploy` role via OIDC, sets AWS env vars
+2. `terraform-apply/` — Runs tf init, plan, apply with var files
+3. `docker-build-push-ecr/` — Builds single Lambda image, tags, pushes to ECR
+
+#### Environment & Wiring
+
+- **Terraform Variables:**
+  - `environment = "dev"`
+  - `aws_region = "us-east-1"` (configurable, defaults to ENV var or tfvars)
+  - `cognito_password_min_length = 12`
+  - `ecr_keep_last_images = 10`
+
+- **GitHub Secrets:**
+  - `AWS_DEPLOY_ROLE_ARN` = `arn:aws:iam::{ACCOUNT}:role/fluxion-backend-gha-deploy`
+  - No static AWS keys (keyless OIDC only)
+
+- **App-Layer Injection:**
+  - Lambda `config.py` reads `boto3.client("ssm").get_parameter("/dev/cognito/user_pool_id")` at startup
+  - App Client ID injected similarly from `/dev/cognito/app_client_id`
+
+**Status:** Code merged (PR #68); infrastructure partially applied — OIDC + deploy role live in AWS, Cognito + ECR + docker push awaiting full dev env apply in follow-up validation (TC-02/TC-03).
+
+### Changed
+- (n/a)
+
 ### Changed
 - **Design Patterns (§11):** Updated tenant-per-schema section to reflect actual implementation:
   - Schema naming: corrected from `tenant_{slug}` prefix to bare names (`dev1`, `acme`, `fpt`)
@@ -202,4 +277,5 @@ See [CLAUDE.md](../CLAUDE.md) for details.
 
 | Version | Date | Change |
 |---------|------|--------|
+| v1.1 | 2026-04-20 | Added Phase 3b (T6 #32) entry: Cognito auth module + CI/CD deploy pipeline (code merged, infrastructure partial apply). |
 | v1.0 | 2026-04-20 | Initial changelog with Phases 1–3 entries; Phase 3 (T6 #31) marked complete. |

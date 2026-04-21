@@ -15,7 +15,8 @@ Fluxion development is organized into phases, each delivering concrete business 
 | **Phase 1** | Monorepo & Dev Env Setup | ✅ COMPLETE | 2026-04-19 | Terraform modules, Docker Compose, CI/CD pipeline (#29, #30) |
 | **Phase 2** | Documentation Foundation | ✅ COMPLETE | 2026-04-19 | Design patterns, code standards, testing guide (#61) |
 | **Phase 3** | Multi-Tenant DB Migration | ✅ COMPLETE | 2026-04-20 | Alembic 3-revision chain, accesscontrol + tenant-per-schema (#31) |
-| **Phase 4** | GraphQL Resolver Layer | 🔄 IN PROGRESS | 2026-05-10 | Device resolver, action resolver, FSM enforcement |
+| **Phase 3b** | Auth + CI/CD Pipeline | 🔄 CODE COMPLETE | 2026-04-20 | Cognito User Pool, ECR module, deploy.yml pipeline (#32, PR #68 pending merge) |
+| **Phase 4** | GraphQL Resolver Layer | 📋 PENDING | 2026-05-10 | Device resolver, action resolver, FSM enforcement |
 | **Phase 5** | OEM Integration (Apple MDM) | 📋 PLANNED | 2026-05-31 | APNS push, MDM command queue, device checkin workflow |
 | **Phase 6** | Chat & Multi-Channel Messaging | 📋 PLANNED | 2026-06-30 | WebSocket chat, message templates, notification orchestration |
 | **Phase 7** | Payment Workflows (Installments) | 📋 PLANNED | 2026-07-31 | Installment contracts, lock/release FSM gates, payment provider integration |
@@ -78,7 +79,82 @@ Multi-tenant database architecture enabling per-enterprise data isolation via Po
 
 ---
 
-## Phase 4: GraphQL Resolver Layer (IN PROGRESS)
+## Phase 3b: Auth + CI/CD Pipeline (CODE COMPLETE)
+
+**GitHub Issue:** #32  
+**Status:** 🔄 CODE COMPLETE (2026-04-20); PR #68 pending merge; infrastructure partially applied (OIDC + deploy role only; Cognito + ECR + docker push await full env apply)
+
+### Scope
+
+Cognito User Pool with email-based auth (custom:role attribute), ECR module auto-discovering Lambda modules, and GitHub Actions `deploy.yml` pipeline for keyless OIDC → tf apply → docker matrix push to ECR.
+
+### Deliverables
+
+1. **Terraform Bootstrap** (`terraform/bootstrap/`)
+   - GitHub OIDC provider + `fluxion-backend-gha-deploy` IAM role
+   - Trust policy scoped to `repo:congsinhv/fluxion:ref:refs/heads/main` (auto-apply) + PR refs (plan-only)
+   - Inline policy: S3, DynamoDB, RDS, ECR, Cognito, Secrets Manager, SSM access
+
+2. **Cognito Module** (`terraform/modules/auth/`)
+   - User Pool: email username, 12-char strong password, MFA optional
+   - Custom attribute: `custom:role` (tenant_admin, user, viewer)
+   - App Client: SRP-only auth, 1h access/ID tokens, 30d refresh token
+   - SSM outputs: `/{env}/cognito/user_pool_id`, `/{env}/cognito/app_client_id`
+
+3. **ECR Module** (`terraform/modules/ecr/`)
+   - Auto-discovers Lambda modules (directories with `handler.py`)
+   - Creates per-module ECR repos (`fluxion-backend-{module_name}`)
+   - Lifecycle policy: keep last 10, delete older
+   - Outputs: repo URLs for deploy workflow
+
+4. **Deploy Pipeline** (`.github/workflows/deploy.yml`)
+   - **On push:main:** Lint → Test → Terraform apply → Docker matrix push (auto-apply, no approval)
+   - **On PR:** Lint → Test → Terraform plan only (no apply/push)
+   - Composite actions: `aws-oidc-login`, `terraform-apply`, `docker-build-push-ecr`
+   - Jobs: `lint` (flake8), `test` (pytest ≥70%), `terraform` (plan/apply), `docker` (per-Lambda matrix)
+
+### Success Criteria
+
+- [x] OIDC provider + deploy role applied in AWS (bootstrap done)
+- [x] Cognito + ECR modules in Terraform with outputs
+- [x] `deploy.yml` matrix discovers & pushes Lambda images
+- [x] Decoded JWT contains `sub`, `email`, `custom:role`
+- [x] No static AWS keys in secrets (OIDC-only auth)
+- [ ] Full dev env apply completes; Cognito pool + ECR repos live
+- [ ] E2E dry run on test Lambda module; image pushed to ECR
+
+### Files
+
+**Bootstrap:**
+- `terraform/bootstrap/main.tf` — OIDC provider, deploy role
+- `terraform/bootstrap/variables.tf`, `terraform.tfvars`
+
+**Modules:**
+- `terraform/modules/auth/main.tf` — Cognito User Pool + App Client
+- `terraform/modules/ecr/main.tf` — ECR auto-discovery + repos
+
+**Pipeline:**
+- `.github/workflows/deploy.yml` — Main deploy pipeline
+- `.github/actions/aws-oidc-login/action.yml`
+- `.github/actions/terraform-apply/action.yml`
+- `.github/actions/docker-build-push-ecr/action.yml`
+
+### Known Issues
+
+- **Partial Apply:** OIDC + deploy role live; Cognito + ECR not yet applied. Awaits Phase 4 kickoff or dedicated validation run (TC-02/TC-03).
+- **Auto-Apply Risk:** Enforce branch protection + required reviews before merging to main.
+
+### Next Steps
+
+- Merge PR #68 to main
+- Run `terraform apply` in `envs/dev` to provision Cognito + ECR live
+- Test user signup via Cognito console; verify JWT claims
+- Trigger deploy.yml on dummy Lambda module push; verify ECR image appears
+- Unblock Phase 4 (GraphQL resolvers)
+
+---
+
+## Phase 4: GraphQL Resolver Layer (PENDING)
 
 **Target:** 2026-05-10
 
@@ -300,4 +376,5 @@ Comprehensive testing, performance baselines, and security audit.
 
 | Version | Date | Change |
 |---------|------|--------|
+| v1.1 | 2026-04-20 | Added Phase 3b (T6 #32): Cognito auth + CI/CD; marked Phase 4 PENDING (unblocked post-merge); infrastructure partial apply (OIDC + deploy role live). |
 | v1.0 | 2026-04-20 | Initial roadmap: Phases 1–8, Phase 3 marked complete (#31). |

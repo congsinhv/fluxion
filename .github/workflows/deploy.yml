@@ -1,0 +1,214 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  # Serialize main-branch applies; PR plan runs keyed by PR so they don't block each other.
+  group: deploy-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  id-token: write   # required for OIDC assume-role
+  contents: read
+  pull-requests: write
+
+env:
+  AWS_REGION: ap-southeast-1
+  TF_VERSION: "1.10.0"
+
+jobs:
+  detect-changes:
+    name: detect changes + enumerate modules
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      oem: ${{ steps.filter.outputs.oem }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      backend_modules: ${{ steps.list-modules.outputs.backend }}
+      oem_modules: ${{ steps.list-modules.outputs.oem }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            backend:
+              - 'fluxion-backend/**'
+              - '.github/workflows/deploy.yml'
+              - '.github/actions/**'
+            oem:
+              - 'fluxion-oem-processor/**'
+              - '.github/workflows/deploy.yml'
+              - '.github/actions/**'
+            frontend:
+              - 'fluxion-frontend/**'
+
+      - id: list-modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          list_modules() {
+            local dir="$1"
+            if [ ! -d "$dir" ]; then echo "[]"; return; fi
+            # Enumerate direct subdirs containing pyproject.toml, skip underscore-prefixed.
+            # grep || true: empty matches exit 1, which aborts under pipefail.
+            find "$dir" -mindepth 2 -maxdepth 2 -name pyproject.toml 2>/dev/null \
+              | sed -E 's|.*/([^/]+)/pyproject\.toml$|\1|' \
+              | { grep -v '^_' || true; } \
+              | jq -R -s -c 'split("\n") | map(select(length > 0))'
+          }
+          backend=$(list_modules fluxion-backend/modules)
+          oem=$(list_modules fluxion-oem-processor/modules)
+          echo "backend=${backend:-[]}" >> "$GITHUB_OUTPUT"
+          echo "oem=${oem:-[]}" >> "$GITHUB_OUTPUT"
+
+  lint-test-backend:
+    name: backend lint + test
+    needs: detect-changes
+    if: needs.detect-changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: fluxion-backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.5.x"
+          enable-cache: true
+      - run: uv python install 3.12
+      - run: uv sync --all-extras --dev
+      - run: uv run ruff format --check .
+      - run: uv run ruff check .
+      - run: uv run mypy --strict modules/
+      - name: pytest per module
+        run: |
+          set -e
+          for module_dir in modules/*/; do
+            [ -f "$module_dir/pyproject.toml" ] || continue
+            echo "::group::pytest $module_dir"
+            (cd "$module_dir" && uv run pytest tests/ --cov=src --cov-report=xml --cov-fail-under=0)
+            echo "::endgroup::"
+          done
+
+  lint-test-oem:
+    name: oem lint + test
+    needs: detect-changes
+    if: needs.detect-changes.outputs.oem == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: fluxion-oem-processor
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.5.x"
+          enable-cache: true
+      - run: uv python install 3.12
+      - run: uv sync --all-extras --dev
+      - run: uv run ruff format --check .
+      - run: uv run ruff check .
+      - run: uv run mypy --strict modules/
+      - name: pytest per module
+        run: |
+          set -e
+          for module_dir in modules/*/; do
+            [ -f "$module_dir/pyproject.toml" ] || continue
+            echo "::group::pytest $module_dir"
+            (cd "$module_dir" && uv run pytest tests/ --cov=src --cov-report=xml --cov-fail-under=0)
+            echo "::endgroup::"
+          done
+
+  tf-backend:
+    name: terraform backend (dev)
+    needs: [detect-changes, lint-test-backend]
+    if: needs.detect-changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/aws-oidc-login
+        with:
+          role-arn: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          region: ${{ env.AWS_REGION }}
+      - uses: ./.github/actions/terraform-apply
+        with:
+          working-directory: fluxion-backend/terraform/envs/dev
+          apply: ${{ github.event_name == 'push' }}
+          terraform-version: ${{ env.TF_VERSION }}
+
+  tf-oem:
+    name: terraform oem (dev)
+    needs: [detect-changes, lint-test-oem]
+    if: needs.detect-changes.outputs.oem == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/aws-oidc-login
+        with:
+          role-arn: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          region: ${{ env.AWS_REGION }}
+      - uses: ./.github/actions/terraform-apply
+        with:
+          working-directory: fluxion-oem-processor/terraform/envs/dev
+          apply: ${{ github.event_name == 'push' }}
+          terraform-version: ${{ env.TF_VERSION }}
+
+  docker-push-backend:
+    name: docker push backend matrix
+    needs: [detect-changes, tf-backend]
+    if: >-
+      github.event_name == 'push' &&
+      needs.detect-changes.outputs.backend == 'true' &&
+      needs.detect-changes.outputs.backend_modules != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        module: ${{ fromJSON(needs.detect-changes.outputs.backend_modules) }}
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/aws-oidc-login
+        with:
+          role-arn: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          region: ${{ env.AWS_REGION }}
+      - uses: ./.github/actions/docker-build-push-ecr
+        with:
+          repository: fluxion-backend-${{ matrix.module }}
+          context: fluxion-backend
+          dockerfile: fluxion-backend/modules/${{ matrix.module }}/Dockerfile
+          tag: ${{ github.sha }}
+
+  docker-push-oem:
+    name: docker push oem matrix
+    needs: [detect-changes, tf-oem]
+    if: >-
+      github.event_name == 'push' &&
+      needs.detect-changes.outputs.oem == 'true' &&
+      needs.detect-changes.outputs.oem_modules != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        module: ${{ fromJSON(needs.detect-changes.outputs.oem_modules) }}
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/aws-oidc-login
+        with:
+          role-arn: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          region: ${{ env.AWS_REGION }}
+      - uses: ./.github/actions/docker-build-push-ecr
+        with:
+          repository: fluxion-oem-processor-${{ matrix.module }}
+          context: fluxion-oem-processor
+          dockerfile: fluxion-oem-processor/modules/${{ matrix.module }}/Dockerfile
+          tag: ${{ github.sha }}
