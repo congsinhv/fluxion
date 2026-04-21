@@ -6,7 +6,7 @@ on:
       - "fluxion-oem-processor/**"
       - ".github/workflows/ci-oem-processor.yml"
   push:
-    branches: [main]
+    branches: [master]
     paths:
       - "fluxion-oem-processor/**"
       - ".github/workflows/ci-oem-processor.yml"
