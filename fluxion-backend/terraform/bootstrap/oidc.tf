@@ -126,7 +126,43 @@ data "aws_iam_policy_document" "gha_deploy_inline" {
       "iam:ListPolicyVersions",
       "iam:CreatePolicyVersion",
       "iam:DeletePolicyVersion",
+      "iam:CreateInstanceProfile",
+      "iam:DeleteInstanceProfile",
+      "iam:GetInstanceProfile",
+      "iam:AddRoleToInstanceProfile",
+      "iam:RemoveRoleFromInstanceProfile",
+      "iam:TagInstanceProfile",
+      "iam:UntagInstanceProfile",
+      "iam:ListInstanceProfilesForRole",
     ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "SecretsManager"
+    effect = "Allow"
+    actions = [
+      "secretsmanager:CreateSecret",
+      "secretsmanager:DeleteSecret",
+      "secretsmanager:DescribeSecret",
+      "secretsmanager:GetSecretValue",
+      "secretsmanager:PutSecretValue",
+      "secretsmanager:UpdateSecret",
+      "secretsmanager:TagResource",
+      "secretsmanager:UntagResource",
+      "secretsmanager:ListSecrets",
+      "secretsmanager:GetResourcePolicy",
+      "secretsmanager:PutResourcePolicy",
+      "secretsmanager:RotateSecret",
+    ]
+    resources = ["*"]
+  }
+
+  # ssm:DescribeParameters is a list-level action — only supports "*" resource.
+  statement {
+    sid       = "SSMDescribeParameters"
+    effect    = "Allow"
+    actions   = ["ssm:DescribeParameters"]
     resources = ["*"]
   }
 
@@ -142,7 +178,6 @@ data "aws_iam_policy_document" "gha_deploy_inline" {
       "ssm:AddTagsToResource",
       "ssm:RemoveTagsFromResource",
       "ssm:ListTagsForResource",
-      "ssm:DescribeParameters",
     ]
     resources = [
       "arn:aws:ssm:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:parameter/fluxion/*",
