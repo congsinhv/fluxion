@@ -1,6 +1,535 @@
-# GraphQL schema for Fluxion backend.
-# This file is the contract between fluxion-backend and fluxion-frontend.
-# Frontend codegen reads this file to generate TypeScript types and hooks.
+# ──────────────────────────────────────────────────────────────────────────────
+# Fluxion GraphQL API Contract (AWS AppSync)
+# Source: wiki T5 §3.8.2 (https://github.com/congsinhv/fluxion/wiki)
+# Ticket: #33 (T7 — AppSync GraphQL schema + resolver mapping)
 #
-# Populated in ticket #33.
-# See docs/module-structure.md §6 for cross-stack contract rules.
+# Auth model:
+#   - Default auth mode: AMAZON_COGNITO_USER_POOLS (applies to all fields unless
+#     overridden). RBAC (ADMIN vs OPERATOR) enforced inside resolver Lambdas via
+#     `custom:role` JWT claim — see wiki §3.8.5.
+#   - `@aws_iam` on internal notify mutations: only signed IAM principals (the
+#     checkin-handler Lambda) may invoke.
+#   - Subscriptions trigger off those IAM-only mutations via `@aws_subscribe`.
+#
+# Frontend codegen consumes this file; keep it stable and machine-parseable.
+# ──────────────────────────────────────────────────────────────────────────────
+
+# ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  ADMIN
+  OPERATOR
+}
+
+enum ActionStatus {
+  ACTION_PENDING
+  ACTION_COMPLETED
+  ACTION_FAILED
+}
+
+enum ChatMessageRole {
+  USER
+  ASSISTANT
+  TOOL
+}
+
+enum ActionLogStatus {
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+}
+
+enum NotificationType {
+  FULLSCREEN
+  POPUP
+}
+
+# ─── State / Policy / Action (config) ─────────────────────────────────────────
+
+type State {
+  id: Int!
+  name: String!
+}
+
+type Service {
+  id: Int!
+  name: String!
+  isEnabled: Boolean!
+}
+
+type Policy {
+  id: Int!
+  name: String!
+  stateId: Int!
+  state: State!
+  serviceTypeId: Int!
+  color: String
+}
+
+type Action {
+  id: ID!
+  name: String!
+  actionTypeId: Int!
+  fromStateId: Int
+  fromState: State
+  serviceTypeId: Int
+  applyPolicyId: Int!
+  applyPolicy: Policy!
+  configuration: AWSJSON
+}
+
+# ─── Icon / Message Template ──────────────────────────────────────────────────
+
+type Icon {
+  filePath: String!
+  name: String!
+}
+
+type IconUploadUrl {
+  url: String!
+  filePath: String!
+  expiresAt: AWSDateTime!
+}
+
+type MessageTemplateIcon {
+  notificationIcon: Icon!
+  headerIcon: Icon!
+  additionalIcon: Icon!
+}
+
+type MessageTemplate {
+  id: ID!
+  name: String!
+  content: String!
+  notificationType: NotificationType!
+  isActive: Boolean
+  icons: MessageTemplateIcon!
+  createdAt: AWSDateTime!
+  updatedAt: AWSDateTime!
+}
+
+type MessageTemplateConnection {
+  items: [MessageTemplate!]!
+  nextToken: String
+}
+
+# ─── TAC & Brand ──────────────────────────────────────────────────────────────
+
+type Brand {
+  id: ID!
+  name: String!
+  createdAt: AWSDateTime!
+  updatedAt: AWSDateTime!
+}
+
+type TAC {
+  id: ID!
+  tac: String!
+  provisioningType: String!
+  brand: Brand
+  model: String
+  marketingName: String
+  createdAt: AWSDateTime!
+  updatedAt: AWSDateTime!
+}
+
+type TACConnection {
+  items: [TAC!]!
+  nextToken: String
+}
+
+# ─── Action Log ───────────────────────────────────────────────────────────────
+
+type ActionLog {
+  id: ID!
+  batchId: ID!
+  actionId: ID!
+  created_by: String!
+  totalDevices: Int!
+  errorCount: Int!
+  status: ActionLogStatus!
+  created_at: AWSDateTime!
+}
+
+type ActionLogConnection {
+  items: [ActionLog!]!
+  nextToken: String
+}
+
+type ActionLogErrorReport {
+  batchId: ID!
+  url: String!
+  expiresAt: AWSDateTime!
+}
+
+# ─── Device ───────────────────────────────────────────────────────────────────
+
+type Device {
+  id: ID!
+  currentPolicy: Policy
+  lastChanged: DeviceLastChange
+  information: DeviceInformation
+  availableActions: [Action!]
+  tokens: DeviceToken
+  createdAt: AWSDateTime!
+  updatedAt: AWSDateTime!
+}
+
+type DeviceLastChange {
+  assignedActionId: ID
+  appliedPolicy: Policy
+}
+
+type DeviceInformation {
+  id: ID!
+  deviceId: ID!
+  serialNumber: String!
+  udid: String!
+  name: String
+  model: String
+  osVersion: String
+  batteryLevel: Float
+  wifiMac: String
+  isSupervised: Boolean
+  lastCheckinAt: AWSDateTime
+  extFields: AWSJSON
+}
+
+type DeviceToken {
+  id: ID!
+  deviceId: ID!
+  topic: String!
+  updatedAt: AWSDateTime!
+}
+
+type DeviceConnection {
+  items: [Device!]!
+  nextToken: String
+  totalCount: Int
+}
+
+# ─── Action Execution ─────────────────────────────────────────────────────────
+
+type ActionExecution {
+  id: ID!
+  deviceId: ID!
+  device: Device
+  actionId: ID!
+  action: Action
+  commandUuid: ID!
+  status: ActionStatus!
+  createdAt: AWSDateTime!
+  updatedAt: AWSDateTime!
+  extFields: AWSJSON
+}
+
+# ─── Milestone ────────────────────────────────────────────────────────────────
+
+type Milestone {
+  id: ID!
+  deviceId: ID!
+  assignedActionId: ID
+  action: Action
+  policyId: Int
+  policy: Policy
+  createdAt: AWSDateTime!
+  extFields: AWSJSON
+}
+
+type MilestoneConnection {
+  items: [Milestone!]!
+  nextToken: String
+}
+
+# ─── User ─────────────────────────────────────────────────────────────────────
+
+type User {
+  id: ID!
+  email: String!
+  name: String!
+  role: UserRole!
+  isActive: Boolean!
+  createdAt: AWSDateTime!
+  updatedAt: AWSDateTime!
+}
+
+type UserConnection {
+  items: [User!]!
+  nextToken: String
+  totalCount: Int
+}
+
+# ─── Chat ─────────────────────────────────────────────────────────────────────
+
+type ChatSession {
+  id: ID!
+  userId: ID!
+  createdAt: AWSDateTime!
+  updatedAt: AWSDateTime!
+  messages: [ChatMessage!]
+}
+
+type ChatMessage {
+  id: ID!
+  sessionId: ID!
+  role: ChatMessageRole!
+  content: String
+  toolCalls: AWSJSON
+  toolResult: AWSJSON
+  createdAt: AWSDateTime!
+}
+
+type ChatResponse {
+  message: ChatMessage!
+  session: ChatSession!
+}
+
+type ChatSessionConnection {
+  items: [ChatSession!]!
+  nextToken: String
+}
+
+# ─── Upload ───────────────────────────────────────────────────────────────────
+
+type UploadResult {
+  totalRequested: Int!
+  accepted: Int!
+  rejected: Int!
+  errors: [UploadError!]
+}
+
+type UploadError {
+  index: Int!
+  serialNumber: String
+  reason: String!
+}
+
+# ─── Action Response ──────────────────────────────────────────────────────────
+
+type AssignActionResponse {
+  executionId: ID!
+  commandUuid: ID!
+  status: ActionStatus!
+}
+
+type BulkAssignResponse {
+  valid: [AssignActionResponse!]!
+  failed: [BulkAssignError!]!
+}
+
+type BulkAssignError {
+  deviceId: ID!
+  reason: String!
+}
+
+# ─── Inputs ───────────────────────────────────────────────────────────────────
+
+input DeviceFilter {
+  stateId: Int
+  policyId: Int
+  search: String
+}
+
+input UploadDeviceInput {
+  serialNumber: String!
+  udid: String!
+  name: String
+  model: String
+  osVersion: String
+}
+
+input AssignActionInput {
+  deviceId: ID!
+  actionId: ID!
+  configuration: AWSJSON
+  messageTemplateId: ID
+}
+
+input BulkAssignInput {
+  deviceIds: [ID!]!
+  actionId: ID!
+  configuration: AWSJSON
+  messageTemplateId: ID
+}
+
+input SendChatMessageInput {
+  sessionId: ID
+  content: String!
+}
+
+input CreateUserInput {
+  email: String!
+  name: String!
+  role: UserRole!
+}
+
+input UpdateUserInput {
+  name: String
+  role: UserRole
+  isActive: Boolean
+}
+
+input UpdateStateInput {
+  name: String!
+}
+
+input UpdatePolicyInput {
+  name: String
+  stateId: Int
+  serviceTypeId: Int
+  color: String
+}
+
+input UpdateActionInput {
+  name: String
+  actionTypeId: Int
+  fromStateId: Int
+  serviceTypeId: Int
+  applyPolicyId: Int
+  configuration: AWSJSON
+}
+
+input UpdateServiceInput {
+  name: String
+  isEnabled: Boolean
+}
+
+input IconInput {
+  filePath: String!
+  name: String!
+}
+
+input MessageTemplateIconInput {
+  notificationIcon: IconInput!
+  headerIcon: IconInput!
+  additionalIcon: IconInput!
+}
+
+input CreateMessageTemplateInput {
+  name: String!
+  content: String!
+  notificationType: NotificationType!
+  icons: MessageTemplateIconInput!
+}
+
+input UpdateMessageTemplateInput {
+  name: String
+  content: String
+  notificationType: NotificationType
+  icons: MessageTemplateIconInput
+  isActive: Boolean
+}
+
+input CreateTACInput {
+  tac: String!
+  provisioningType: String!
+  brandId: ID
+  model: String
+  marketingName: String
+}
+
+input UpdateTACInput {
+  tac: String
+  provisioningType: String
+  brandId: ID
+  model: String
+  marketingName: String
+}
+
+# ─── Queries ──────────────────────────────────────────────────────────────────
+
+type Query {
+  # device-resolver
+  getDevice(id: ID!): Device
+  listDevices(filter: DeviceFilter, limit: Int = 20, nextToken: String): DeviceConnection!
+  getDeviceHistory(deviceId: ID!, limit: Int = 20, nextToken: String): MilestoneConnection!
+
+  # platform-resolver
+  listStates(serviceTypeId: Int): [State!]!
+  listPolicies(serviceTypeId: Int): [Policy!]!
+  listActions(fromStateId: Int, serviceTypeId: Int): [Action!]!
+  listServices: [Service!]!
+
+  # message-template-resolver
+  getMessageTemplate(id: ID!): MessageTemplate
+  listMessageTemplates(notificationType: NotificationType, limit: Int = 20, nextToken: String): MessageTemplateConnection!
+
+  # tac-resolver
+  getTAC(id: ID!): TAC
+  listTACs(search: String, limit: Int = 20, nextToken: String): TACConnection!
+
+  # action-log-resolver
+  getActionLog(batchId: ID!): ActionLog
+  listActionLogs(limit: Int = 20, nextToken: String): ActionLogConnection!
+
+  # user-resolver
+  getUser(id: ID!): User
+  listUsers(limit: Int = 20, nextToken: String): UserConnection!
+  getCurrentUser: User!
+
+  # chat-resolver
+  getChatSession(id: ID!): ChatSession
+  listChatSessions(limit: Int = 10, nextToken: String): ChatSessionConnection!
+}
+
+# ─── Mutations ────────────────────────────────────────────────────────────────
+
+type Mutation {
+  # action-resolver
+  assignAction(input: AssignActionInput!): AssignActionResponse!
+  assignBulkAction(input: BulkAssignInput!): BulkAssignResponse!
+
+  # platform-resolver (ADMIN only — enforced in Lambda)
+  updateState(id: Int!, input: UpdateStateInput!): State!
+  updatePolicy(id: Int!, input: UpdatePolicyInput!): Policy!
+  updateAction(id: ID!, input: UpdateActionInput!): Action!
+  updateService(id: Int!, input: UpdateServiceInput!): Service!
+
+  # message-template-resolver (ADMIN only)
+  generateIconUploadUrl(fileName: String!, contentType: String!): IconUploadUrl!
+  createMessageTemplate(input: CreateMessageTemplateInput!): MessageTemplate!
+  updateMessageTemplate(id: ID!, input: UpdateMessageTemplateInput!): MessageTemplate!
+  deleteMessageTemplate(id: ID!): Boolean!
+
+  # tac-resolver (ADMIN only)
+  createTAC(input: CreateTACInput!): TAC!
+  updateTAC(id: ID!, input: UpdateTACInput!): TAC!
+  deleteTAC(id: ID!): Boolean!
+
+  # action-log-resolver
+  generateActionLogErrorReport(batchId: ID!): ActionLogErrorReport!
+
+  # upload-resolver (ADMIN only)
+  uploadDevices(devices: [UploadDeviceInput!]!): UploadResult!
+
+  # user-resolver (ADMIN only)
+  createUser(input: CreateUserInput!): User!
+  updateUser(id: ID!, input: UpdateUserInput!): User!
+
+  # chat-resolver
+  sendChatMessage(input: SendChatMessageInput!): ChatResponse!
+
+  # Internal — checkin-handler only (IAM-signed)
+  notifyDeviceStateChanged(deviceId: ID!, currentPolicyId: Int!): Device
+    @aws_iam
+  notifyActionExecutionUpdated(deviceId: ID!, executionId: ID!, status: ActionStatus!): ActionExecution
+    @aws_iam
+}
+
+# ─── Subscriptions ────────────────────────────────────────────────────────────
+
+type Subscription {
+  onDeviceStateChanged(deviceId: ID): Device
+    @aws_subscribe(mutations: ["notifyDeviceStateChanged"])
+
+  onActionExecutionUpdated(deviceId: ID): ActionExecution
+    @aws_subscribe(mutations: ["notifyActionExecutionUpdated"])
+}
+
+# ─── Schema ───────────────────────────────────────────────────────────────────
+
+schema {
+  query: Query
+  mutation: Mutation
+  subscription: Subscription
+}

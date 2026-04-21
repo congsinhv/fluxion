@@ -130,7 +130,43 @@ All Lambdas follow the tenant-per-schema isolation model:
 
 ## 3. Application Layers
 
-### 3.1 GraphQL Resolver Layer (AppSync + Lambda)
+### 3.1 AppSync GraphQL API Infrastructure
+
+**Deployed:** AWS AppSync GraphQL API (`37milwnpgravdoo7524hyxd42e` on dev).
+
+**Architecture:**
+```
+GraphQL Client (UI)
+  ↓
+AppSync GraphQL Endpoint (https://...)
+  ├─ Primary Auth: Cognito User Pool (JWT via SRP)
+  ├─ Secondary Auth: AWS IAM (SigV4 signature for internal notify* mutations)
+  └─ Subscription WebSocket: (wss://...)
+      (triggered by notifyDeviceStateChange, notifyActionProgress internal mutations)
+```
+
+**Schema & Auth Model:**
+- **SDL Source:** `schema.graphql` (534 lines, wiki T5 §3.8.2)
+- **Enums:** UserRole (ADMIN, OPERATOR), ActionStatus, ChatMessageRole, ActionLogStatus, NotificationType
+- **Default Auth:** Cognito User Pools (all fields); RBAC (ADMIN vs OPERATOR) enforced inside resolver Lambdas via `custom:role` JWT claim
+- **IAM-Only Fields:** notify* mutations — only checkin-handler Lambda (SigV4 signed) may invoke; triggers subscriptions for client WebSocket delivery
+- **Logging:** CloudWatch log group, field logs at ERROR level (configurable), PII redaction enabled
+
+**Resolver Deployment Model:**
+- **Lambda Resolver Wiring:** Terraform variable `lambda_resolver_arns` (map, default empty) gates resolver Lambdas. Empty deploy skips all Lambda data sources; populated incrementally as resolvers ship (Phase 4+, ticket #34+).
+- **Current State (T7 #33):** API + schema deployed; NONE data source only (schema validation + subscriptions work, queries/mutations return errors until resolvers implemented).
+
+**SSM Parameter Exports (dev):**
+```
+/fluxion/dev/api/api-id                  → AppSync API ID
+/fluxion/dev/api/graphql-endpoint        → HTTPS endpoint
+/fluxion/dev/api/realtime-endpoint       → WebSocket subscription endpoint
+/fluxion/dev/api/lambda-invoke-role-arn  → Role ARN for resolvers to assume
+```
+
+Resolver Lambdas read these at startup to dispatch queries/mutations back to AppSync.
+
+### 3.2 GraphQL Resolver Layer (Phase 4, T8+)
 
 AppSync routes GraphQL fields to Lambda resolvers via the `Resolver` pattern (see [design-patterns.md §4](design-patterns.md)):
 
@@ -152,7 +188,9 @@ AppSync serializes JSON response
 Client receives response
 ```
 
-### 3.2 Choreography Saga (SNS/SQS Multi-Lambda Workflows)
+**(Implementation deferred to Phase 4. See development-roadmap.md §4 for details.)**
+
+### 3.3 Choreography Saga (SNS/SQS Multi-Lambda Workflows)
 
 Device actions flow across multiple Lambdas using choreography sagas (see [design-patterns.md §2](design-patterns.md)):
 
@@ -380,5 +418,6 @@ After merge to main, GitHub Actions triggers automatically:
 
 | Version | Date | Change |
 |---------|------|--------|
+| v1.2 | 2026-04-21 | Added AppSync API infrastructure section (§3.1): schema, auth model, SSM exports, resolver deployment model. Split resolver layer into infrastructure (§3.1, T7 #33, deployed) + implementation (§3.2, Phase 4, T8+). |
 | v1.1 | 2026-04-20 | Added CI/CD section (§8): GitHub OIDC, deploy.yml workflow, ECR auto-discovery, docker matrix push (#32, pending merge). |
 | v1.0 | 2026-04-20 | Initial release. Documents 3-revision Alembic chain, accesscontrol + 16 per-tenant tables, provisioning procs, FSM design (#31). |

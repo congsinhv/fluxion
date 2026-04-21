@@ -44,6 +44,19 @@ module "auth" {
   env                  = var.env
 }
 
+module "api" {
+  source               = "../../modules/api"
+  resource_name_prefix = var.resource_name_prefix
+  env                  = var.env
+  aws_region           = var.aws_region
+  schema_path          = "${path.module}/../../../schema.graphql"
+  cognito_user_pool_id = module.auth.user_pool_id
+  lambda_resolver_arns = {} # populate as resolver Lambdas ship (T8+)
+  log_retention_days   = 14
+  log_field_log_level  = "ERROR"
+  tags                 = local.ssm_tags
+}
+
 locals {
   ssm_prefix = "/fluxion/${var.env}"
 
@@ -151,5 +164,33 @@ resource "aws_ssm_parameter" "cognito_issuer_url" {
   name  = "${local.ssm_prefix}/auth/issuer-url"
   type  = "String"
   value = module.auth.issuer_url
+  tags  = local.ssm_tags
+}
+
+resource "aws_ssm_parameter" "appsync_api_id" {
+  name  = "${local.ssm_prefix}/api/api-id"
+  type  = "String"
+  value = module.api.api_id
+  tags  = local.ssm_tags
+}
+
+resource "aws_ssm_parameter" "appsync_graphql_endpoint" {
+  name  = "${local.ssm_prefix}/api/graphql-endpoint"
+  type  = "String"
+  value = module.api.graphql_endpoint
+  tags  = local.ssm_tags
+}
+
+resource "aws_ssm_parameter" "appsync_realtime_endpoint" {
+  name  = "${local.ssm_prefix}/api/realtime-endpoint"
+  type  = "String"
+  value = module.api.realtime_endpoint
+  tags  = local.ssm_tags
+}
+
+resource "aws_ssm_parameter" "appsync_lambda_invoke_role_arn" {
+  name  = "${local.ssm_prefix}/api/lambda-invoke-role-arn"
+  type  = "String"
+  value = module.api.appsync_lambda_invoke_role_arn
   tags  = local.ssm_tags
 }

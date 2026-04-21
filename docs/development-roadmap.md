@@ -16,7 +16,8 @@ Fluxion development is organized into phases, each delivering concrete business 
 | **Phase 2** | Documentation Foundation | ✅ COMPLETE | 2026-04-19 | Design patterns, code standards, testing guide (#61) |
 | **Phase 3** | Multi-Tenant DB Migration | ✅ COMPLETE | 2026-04-20 | Alembic 3-revision chain, accesscontrol + tenant-per-schema (#31) |
 | **Phase 3b** | Auth + CI/CD Pipeline | 🔄 CODE COMPLETE | 2026-04-20 | Cognito User Pool, ECR module, deploy.yml pipeline (#32, PR #68 pending merge) |
-| **Phase 4** | GraphQL Resolver Layer | 📋 PENDING | 2026-05-10 | Device resolver, action resolver, FSM enforcement |
+| **Phase 3c** | AppSync GraphQL API | ✅ COMPLETE | 2026-04-21 | AppSync API infrastructure, schema, Cognito+IAM auth, SSM exports (#33) |
+| **Phase 4** | GraphQL Resolver Layer | 📋 PENDING | 2026-05-10 | Device resolver, action resolver, FSM enforcement (T8, #34+) |
 | **Phase 5** | OEM Integration (Apple MDM) | 📋 PLANNED | 2026-05-31 | APNS push, MDM command queue, device checkin workflow |
 | **Phase 6** | Chat & Multi-Channel Messaging | 📋 PLANNED | 2026-06-30 | WebSocket chat, message templates, notification orchestration |
 | **Phase 7** | Payment Workflows (Installments) | 📋 PLANNED | 2026-07-31 | Installment contracts, lock/release FSM gates, payment provider integration |
@@ -146,11 +147,69 @@ Cognito User Pool with email-based auth (custom:role attribute), ECR module auto
 
 ### Next Steps
 
-- Merge PR #68 to main
+- Merge PR #68 to main (Phase 3b)
 - Run `terraform apply` in `envs/dev` to provision Cognito + ECR live
 - Test user signup via Cognito console; verify JWT claims
 - Trigger deploy.yml on dummy Lambda module push; verify ECR image appears
-- Unblock Phase 4 (GraphQL resolvers)
+- Merge feature/33-appsync-api (Phase 3c, completed)
+- Unblock Phase 4 (GraphQL resolvers, T8 #34+)
+
+---
+
+## Phase 3c: AppSync GraphQL API (COMPLETE)
+
+**GitHub Issue:** #33  
+**Status:** ✅ COMPLETE (2026-04-21)
+
+### Scope
+
+AWS AppSync GraphQL API infrastructure with Cognito + IAM multi-auth, schema deployment, and resolver Lambda wiring framework.
+
+### Deliverables
+
+1. **Terraform Module** (`terraform/modules/api/`)
+   - AppSync GraphQL API: Cognito User Pools (primary) + IAM (secondary)
+   - Schema SDL input: `schema.graphql` (534 lines)
+   - Lambda resolver ARN mapping: `lambda_resolver_arns` variable (empty by default, populated incrementally)
+   - CloudWatch logging + PII redaction config
+   - IAM role: `appsync_lambda_invoke` (for resolver Lambda invocation)
+
+2. **GraphQL Schema**
+   - Source: Wiki T5 §3.8.2
+   - Enums: UserRole, ActionStatus, ChatMessageRole, ActionLogStatus, NotificationType
+   - Types: State, Policy, Action, Device, Chat, User, ActionLog, etc.
+   - Auth: Cognito (default) + IAM (notify* mutations)
+   - Subscriptions: Triggered via notifyDeviceStateChange, notifyActionProgress
+
+3. **Dev Environment Wiring**
+   - Dev env SSM exports (4 params under `/fluxion/dev/api/`): API ID, GraphQL endpoint, realtime endpoint, invoke role ARN
+   - Resolver Lambdas read these params at startup to dispatch back to AppSync
+
+4. **Deployment**
+   - API deployed: `37milwnpgravdoo7524hyxd42e` (dev)
+   - Schema deployed: Live, schema validation working
+   - Endpoints: GraphQL + WebSocket live
+   - Resolvers: NONE data source only (awaiting Phase 4 implementation)
+
+### Success Criteria
+
+- [x] AppSync API deployed with valid schema
+- [x] Cognito auth mode operational (JWT parsing)
+- [x] IAM auth mode operational (internal notify* mutations)
+- [x] SSM parameters exported for resolver Lambda discovery
+- [x] CloudWatch logs operational, PII redaction enabled
+- [ ] (Phase 4) Resolver Lambdas implemented and wired via lambda_resolver_arns
+
+### Files
+
+**Module:**
+- `/fluxion-backend/terraform/modules/api/` (main.tf, iam.tf, resolvers.tf, logging.tf, variables.tf, outputs.tf)
+
+**Schema:**
+- `/schema.graphql` (main repo root, 534 lines)
+
+**Dev Env Integration:**
+- `/fluxion-backend/terraform/envs/dev/main.tf` (module.api call + SSM exports)
 
 ---
 
@@ -376,5 +435,6 @@ Comprehensive testing, performance baselines, and security audit.
 
 | Version | Date | Change |
 |---------|------|--------|
+| v1.2 | 2026-04-21 | Added Phase 3c (T7 #33): AppSync GraphQL API infrastructure, schema, SSM exports. Updated Phase 4 dependency notes (awaits Phase 3b merge). |
 | v1.1 | 2026-04-20 | Added Phase 3b (T6 #32): Cognito auth + CI/CD; marked Phase 4 PENDING (unblocked post-merge); infrastructure partial apply (OIDC + deploy role live). |
 | v1.0 | 2026-04-20 | Initial roadmap: Phases 1–8, Phase 3 marked complete (#31). |
