@@ -92,7 +92,7 @@ Cognito User Pool with email-based auth (custom:role attribute), ECR module auto
 
 1. **Terraform Bootstrap** (`terraform/bootstrap/`)
    - GitHub OIDC provider + `fluxion-backend-gha-deploy` IAM role
-   - Trust policy scoped to `repo:congsinhv/fluxion:ref:refs/heads/main` (auto-apply) + PR refs (plan-only)
+   - Trust policy scoped to `repo:congsinhv/fluxion:ref:refs/heads/master` (auto-apply, prod) + PR refs (plan-only)
    - Inline policy: S3, DynamoDB, RDS, ECR, Cognito, Secrets Manager, SSM access
 
 2. **Cognito Module** (`terraform/modules/auth/`)

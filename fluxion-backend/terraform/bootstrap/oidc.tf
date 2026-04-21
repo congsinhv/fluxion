@@ -31,13 +31,14 @@ data "aws_iam_policy_document" "gha_deploy_trust" {
       values   = ["sts.amazonaws.com"]
     }
 
-    # Allow: pushes to main, tag pushes, and pull_request events.
+    # Allow: pushes to master (prod), tag pushes, and pull_request events.
+    # `develop` is dev-env integration branch — no CI runs there, so no trust needed.
     # PR hardening (plan-only) deferred to follow-up ticket.
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
       values = [
-        "repo:${var.github_repo}:ref:refs/heads/main",
+        "repo:${var.github_repo}:ref:refs/heads/master",
         "repo:${var.github_repo}:ref:refs/tags/*",
         "repo:${var.github_repo}:pull_request",
       ]
