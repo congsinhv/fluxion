@@ -20,9 +20,13 @@ resource "aws_appsync_graphql_api" "this" {
   schema              = file(var.schema_path)
 
   user_pool_config {
-    user_pool_id   = var.cognito_user_pool_id
-    aws_region     = var.aws_region
-    default_action = "DENY" # unauthenticated requests rejected by AppSync
+    user_pool_id = var.cognito_user_pool_id
+    aws_region   = var.aws_region
+    # Must be ALLOW when additional auth providers are configured — AppSync
+    # rejects DENY in that case. Security is preserved: requests still need
+    # either a valid Cognito JWT OR SigV4 IAM signature; unauth requests
+    # match neither and are rejected with UnauthorizedException.
+    default_action = "ALLOW"
   }
 
   additional_authentication_provider {
