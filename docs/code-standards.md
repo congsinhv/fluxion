@@ -492,7 +492,7 @@ These commands **will be** CI gates. Until the pre-commit / CI ticket lands, run
 | Terraform | validate | `terraform validate` | Fail on error |
 | Terraform | tflint | `tflint --recursive` | Fail on error |
 | SQL | sqlfluff | `sqlfluff lint migrations/` | Fail on error |
-| Commits | commitlint | `commitlint --from origin/main` | Fail on non-conforming |
+| Commits | commitlint | `commitlint --from origin/master` | Fail on non-conforming |
 
 ---
 

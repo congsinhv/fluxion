@@ -2,9 +2,9 @@ name: Deploy
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
-    branches: [main]
+    branches: [master]
 
 concurrency:
   # Serialize main-branch applies; PR plan runs keyed by PR so they don't block each other.

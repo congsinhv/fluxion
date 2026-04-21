@@ -277,14 +277,24 @@ Idempotency key sourced from:
 
 ### 8.1 GitHub Actions Workflow (`deploy.yml`)
 
-Two-phase deployment strategy: plan-only on PR; auto-apply on merge to main.
+Two-phase deployment strategy: plan-only on PR; auto-apply on merge to `master` (prod).
 
-**On `push: main`** (auto-apply, no manual approval):
+**Git flow:**
+```
+feature/<N>-<slug> ──(PR)──▶ develop ──(manual dev deploy)──┐
+                                                            ▼
+                               (PR at phase close) develop ──▶ master  ──(CI/CD auto-apply, prod)
+```
+
+- `develop` — integration branch, **no CI/CD**; operator runs `terraform apply` locally for dev-env verification.
+- `master` — prod branch; push triggers `deploy.yml` which applies Terraform + pushes ECR images.
+
+**On `push: master`** (auto-apply, no manual approval):
 ```
 lint (flake8) ─→ test (pytest) ─→ terraform apply ─→ docker push matrix
 ```
 
-**On `pull_request`** (plan-only, gates merge):
+**On `pull_request` (to master)** (plan-only, gates merge):
 ```
 lint (flake8) ─→ test (pytest) ─→ terraform plan (artifact) ─→ [blocked: no apply/push]
 ```
@@ -309,8 +319,9 @@ lint (flake8) ─→ test (pytest) ─→ terraform plan (artifact) ─→ [bloc
 - Issuer: `https://token.actions.githubusercontent.com`
 - Audience: `sts.amazonaws.com`
 - Trust policy scoped to:
-  - `repo:congsinhv/fluxion:ref:refs/heads/main` — auto-apply on push:main
+  - `repo:congsinhv/fluxion:ref:refs/heads/master` — auto-apply on push:master (prod CI/CD)
   - `repo:congsinhv/fluxion:pull_request` — plan-only for PR validation
+  - `develop` branch is dev-env integration only — no CI/CD trust needed (manual deploy)
 
 **IAM Role: `fluxion-backend-gha-deploy`**
 - Permissions: Terraform state (S3, DynamoDB lock), RDS, ECR, Cognito, Secrets Manager, SSM Parameter Store

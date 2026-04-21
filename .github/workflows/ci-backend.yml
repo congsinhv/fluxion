@@ -6,7 +6,7 @@ on:
       - "fluxion-backend/**"
       - ".github/workflows/ci-backend.yml"
   push:
-    branches: [main]
+    branches: [master]
     paths:
       - "fluxion-backend/**"
       - ".github/workflows/ci-backend.yml"

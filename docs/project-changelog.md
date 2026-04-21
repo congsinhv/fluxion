@@ -27,7 +27,7 @@
 
 **`terraform/bootstrap/` — OIDC & Deploy Role (applied once, bootstrap-only)**
 - GitHub OIDC provider (OIDC issuer, audience, thumbprint)
-- `fluxion-backend-gha-deploy` IAM role (trust policy scoped to `repo:congsinhv/fluxion:ref:refs/heads/main` + PR refs)
+- `fluxion-backend-gha-deploy` IAM role (trust policy scoped to `repo:congsinhv/fluxion:ref:refs/heads/master` + PR refs)
 - Inline policy: Terraform state (S3 + DynamoDB), RDS, ECR, Cognito, Secrets Manager, SSM Parameter Store
 - Environment: `dev` only (stage/prod in future ticket #33)
 
