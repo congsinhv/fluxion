@@ -58,6 +58,20 @@ module "resolver_device" {
   }
 }
 
+module "resolver_platform" {
+  source        = "../../modules/lambda_function"
+  function_name = "${var.resource_name_prefix}-platform-resolver"
+  image_uri     = "${module.ecr.repository_urls["platform_resolver"]}:latest"
+  env = {
+    DATABASE_URI            = local.database_uri
+    POWERTOOLS_SERVICE_NAME = "platform_resolver"
+  }
+  vpc_config = {
+    subnet_ids = module.network.private_subnet_ids
+    sg_id      = module.network.lambda_sg_id
+  }
+}
+
 module "api" {
   source               = "../../modules/api"
   resource_name_prefix = var.resource_name_prefix
@@ -66,7 +80,8 @@ module "api" {
   schema_path          = "${path.module}/../../../schema.graphql"
   cognito_user_pool_id = module.auth.user_pool_id
   lambda_resolver_arns = {
-    device = module.resolver_device.invoke_arn
+    device   = module.resolver_device.invoke_arn
+    platform = module.resolver_platform.invoke_arn
   }
   log_retention_days  = 14
   log_field_log_level = "ERROR"
