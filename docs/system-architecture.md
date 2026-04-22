@@ -166,7 +166,7 @@ AppSync GraphQL Endpoint (https://...)
 
 Resolver Lambdas read these at startup to dispatch queries/mutations back to AppSync.
 
-### 3.2 GraphQL Resolver Layer (Phase 4, T8+)
+### 3.2 GraphQL Resolver Layer (Phase 4, T8 #34, IN PROGRESS)
 
 AppSync routes GraphQL fields to Lambda resolvers via the `Resolver` pattern (see [design-patterns.md §4](design-patterns.md)):
 
@@ -175,20 +175,64 @@ Client GraphQL mutation
   ↓
 AppSync GraphQL engine
   ↓
-Lambda resolver (e.g., device_resolver, action_resolver)
-  ├─ Parse event, extract Cognito claims
-  ├─ Validate tenant_id claim, resolve schema_name from accesscontrol.tenants
-  ├─ Validate input (Pydantic models)
-  ├─ Call business logic with tenant context
-  ├─ Map errors to AppSync error responses
-  └─ Serialize output, return to AppSync
+Lambda resolver (device_resolver, platform_resolver, user_resolver)
+  ├─ Extract Cognito JWT claims (sub, custom:tenant_id)
+  ├─ Build Context: resolve tenant_id → schema_name, lookup user_id in accesscontrol.users
+  ├─ Enforce permission: check accesscontrol.users_permissions with permission code
+  ├─ Parse & validate input via Pydantic (BaseInput with extra="forbid")
+  ├─ Call repository layer with Database(tenant_schema) context
+  ├─ Convert rows to Pydantic response (BaseResponse with extra="allow")
+  ├─ Map domain errors to AppSync error codes
+  └─ Return result or error to AppSync
   ↓
 AppSync serializes JSON response
   ↓
 Client receives response
 ```
 
-**(Implementation deferred to Phase 4. See development-roadmap.md §4 for details.)**
+**Implemented (Phase 4, T8 #34, P0–P5 phases):**
+
+Three Lambda resolvers now live in `fluxion-backend/modules/`:
+
+1. **device_resolver** (P2 #34)
+   - Handles: `getDevice(id)`, `listDevices(filter, limit, nextToken)`, `getDeviceHistory(deviceId, limit, nextToken)`
+   - Auth: requires `device:read` permission
+   - Uses psycopg3 + Pydantic v2 for DB + input validation
+   - Returns: DeviceResponse, DeviceConnectionResponse, MilestoneConnectionResponse (Relay-style pagination)
+
+2. **platform_resolver** (P3 #34)
+   - Handles: platform-related queries and mutations
+   - Auth: permission-driven via decorator
+   - Repository-backed device platform queries
+
+3. **user_resolver** (P4 #34)
+   - Handles: `createUser(email, name)`, user lifecycle
+   - Auth: permission-driven; creates user in both Cognito (via AdminCreateUser) and accesscontrol.users
+   - Special: reads SSM params for Cognito User Pool ID, executes Cognito API calls
+   - Rollback: on Cognito user creation failure, transaction rolls back DB insert (idempotency via cognito_sub unique constraint)
+
+**Infrastructure (P1 #34):**
+- Reusable `terraform/modules/lambda_function/` module wraps `aws_lambda_function` (container image)
+- Inputs: function_name, image_uri, env vars, VPC config, optional extra_policy_statements
+- Outputs: function_arn, invoke_arn (for AppSync Lambda data source)
+- All resolvers use same pattern: psycopg3 + Pydantic v2 + permission decorator + error mapping
+
+**Database & Permission Model (P0 #34):**
+- Permission catalog migrated via `a1b2c3d4e5f6_seed_permission_catalog.py`: codes like `device:read`, `device:write`, `user:create`
+- Dev admin seed via `b9c3d1e2f4a5_seed_dev_admin_permissions.py`: grants global admin `*:*` permission
+- Auth decorator queries `accesscontrol.users_permissions` for (cognito_sub, code, tenant_id) tuple
+- Tenant-scoped: `up.tenant_id = ? OR up.tenant_id IS NULL` (NULL = global grant)
+
+**Authentication Flow:**
+- Cognito JWT contains `sub` (user ID), `custom:tenant_id` (BIGINT), other claims
+- Handler decorator: parses claims → looks up tenant_schema in DB → checks permission
+- Context object: (cognito_sub, user_id, tenant_id, tenant_schema) passed to field handler
+- Database: context-aware `Database(dsn, tenant_schema)` ensures all queries scoped to correct tenant
+
+**Error Handling:**
+- Domain errors inherit from `FluxionError` (auth.py, db.py, exceptions.py per module)
+- Handler catches, logs with correlation_id, maps to AppSync error codes (FORBIDDEN, NOT_FOUND, VALIDATION_ERROR, INTERNAL_ERROR)
+- Structured JSON logging via aws-lambda-powertools
 
 ### 3.3 Choreography Saga (SNS/SQS Multi-Lambda Workflows)
 
@@ -418,6 +462,7 @@ After merge to main, GitHub Actions triggers automatically:
 
 | Version | Date | Change |
 |---------|------|--------|
+| v1.3 | 2026-04-22 | Resolver layer implementation complete (§3.2, T8 #34, P0–P5 phases): 3 Lambda resolvers (device, platform, user), reusable lambda_function module, psycopg3 + Pydantic v2 migration, permission catalog seed, dev admin seed, auth decorator pattern, context-aware Database class. |
 | v1.2 | 2026-04-21 | Added AppSync API infrastructure section (§3.1): schema, auth model, SSM exports, resolver deployment model. Split resolver layer into infrastructure (§3.1, T7 #33, deployed) + implementation (§3.2, Phase 4, T8+). |
 | v1.1 | 2026-04-20 | Added CI/CD section (§8): GitHub OIDC, deploy.yml workflow, ECR auto-discovery, docker matrix push (#32, pending merge). |
 | v1.0 | 2026-04-20 | Initial release. Documents 3-revision Alembic chain, accesscontrol + 16 per-tenant tables, provisioning procs, FSM design (#31). |

@@ -8,9 +8,16 @@
 
 ## [Unreleased]
 
-### Added
-- AppSync GraphQL API infrastructure (T7 #33): Terraform module + schema + Cognito+IAM auth + dev env wiring + SSM param exports
-- E2E smoke + Cognito JWT auth (#34 T4): Alembic seed migration, provision-dev-admin.sh, smoke-appsync.sh, auth module ALLOW_ADMIN_USER_PASSWORD_AUTH, deployment guide
+### In Progress
+- **Phase 4 (T7 #34) — Lambda Resolvers (IN PROGRESS, code on feature/34-lambda-resolvers):**
+  - P0 (Template migration): psycopg3 + Pydantic v2 + auth skeleton complete, Alembic seed migration for 6 permission codes
+  - P1 (Terraform lambda_function module): 5 files complete, validated
+  - P2 (device_resolver): 3 fields, ≥80% coverage, tests green
+  - P3 (platform_resolver): 8 fields (4 queries + 4 mutations), 87.17% coverage, 49 tests passing
+  - P4 (user_resolver): 5 fields, Cognito transaction coordination tested, rollback proven
+  - P5 (E2E smoke): Scripts + Alembic seed migration written, deployment docs updated, live run deferred to post-merge
+  - **Blockers:** PR #79 merge coordination; live `terraform apply` + AWS CLI smoke run awaits merge
+  - **DONE_WITH_CONCERNS:** Design & implementation complete; deployment testing deferred (no functional impact pre-merge)
 
 ---
 
