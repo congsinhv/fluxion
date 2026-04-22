@@ -44,6 +44,20 @@ module "auth" {
   env                  = var.env
 }
 
+module "resolver_device" {
+  source        = "../../modules/lambda_function"
+  function_name = "${var.resource_name_prefix}-device-resolver"
+  image_uri     = "${module.ecr.repository_urls["device_resolver"]}:latest"
+  env = {
+    DATABASE_URI            = local.database_uri
+    POWERTOOLS_SERVICE_NAME = "device_resolver"
+  }
+  vpc_config = {
+    subnet_ids = module.network.private_subnet_ids
+    sg_id      = module.network.lambda_sg_id
+  }
+}
+
 module "api" {
   source               = "../../modules/api"
   resource_name_prefix = var.resource_name_prefix
@@ -51,10 +65,16 @@ module "api" {
   aws_region           = var.aws_region
   schema_path          = "${path.module}/../../../schema.graphql"
   cognito_user_pool_id = module.auth.user_pool_id
-  lambda_resolver_arns = {} # populate as resolver Lambdas ship (T8+)
-  log_retention_days   = 14
-  log_field_log_level  = "ERROR"
-  tags                 = local.ssm_tags
+  lambda_resolver_arns = {
+    device = module.resolver_device.invoke_arn
+  }
+  log_retention_days  = 14
+  log_field_log_level = "ERROR"
+  tags                = local.ssm_tags
+}
+
+data "aws_secretsmanager_secret_version" "db" {
+  secret_id = module.database.secret_name
 }
 
 locals {
@@ -72,6 +92,11 @@ locals {
     for p in local.lambda_module_paths :
     dirname(p) if !startswith(dirname(p), "_")
   ]
+
+  # Construct psycopg3 DSN from RDS endpoint + Secrets Manager credentials.
+  # Secret JSON shape: {"username": "...", "password": "..."} (set by database module).
+  _db_secret   = jsondecode(data.aws_secretsmanager_secret_version.db.secret_string)
+  database_uri = "postgresql://${local._db_secret.username}:${local._db_secret.password}@${module.database.effective_endpoint}/fluxion"
 }
 
 module "ecr" {
