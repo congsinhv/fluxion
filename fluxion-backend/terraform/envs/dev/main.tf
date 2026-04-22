@@ -72,6 +72,33 @@ module "resolver_platform" {
   }
 }
 
+module "resolver_user" {
+  source        = "../../modules/lambda_function"
+  function_name = "${var.resource_name_prefix}-user-resolver"
+  image_uri     = "${module.ecr.repository_urls["user_resolver"]}:latest"
+  env = {
+    DATABASE_URI            = local.database_uri
+    POWERTOOLS_SERVICE_NAME = "user_resolver"
+    COGNITO_USER_POOL_ID    = module.auth.user_pool_id
+  }
+  vpc_config = {
+    subnet_ids = module.network.private_subnet_ids
+    sg_id      = module.network.lambda_sg_id
+  }
+  extra_policy_statements = [
+    {
+      effect  = "Allow"
+      actions = [
+        "cognito-idp:AdminCreateUser",
+        "cognito-idp:AdminDeleteUser",
+        "cognito-idp:AdminGetUser",
+        "cognito-idp:AdminUpdateUserAttributes",
+      ]
+      resources = [module.auth.user_pool_arn]
+    },
+  ]
+}
+
 module "api" {
   source               = "../../modules/api"
   resource_name_prefix = var.resource_name_prefix
@@ -82,6 +109,7 @@ module "api" {
   lambda_resolver_arns = {
     device   = module.resolver_device.invoke_arn
     platform = module.resolver_platform.invoke_arn
+    user     = module.resolver_user.invoke_arn
   }
   log_retention_days  = 14
   log_field_log_level = "ERROR"
