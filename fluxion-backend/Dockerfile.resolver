@@ -18,12 +18,12 @@ ARG MODULE_DIR=modules/_template
 COPY ${MODULE_DIR}/pyproject.toml ${LAMBDA_TASK_ROOT}/pyproject.toml
 
 # Install runtime deps into the Lambda task root (no dev deps).
+# Fallback list mirrors pyproject.toml (psycopg3; no SQLAlchemy/psycopg2).
 RUN uv pip install --system --no-cache -r ${LAMBDA_TASK_ROOT}/pyproject.toml 2>/dev/null || \
     uv pip install --system --no-cache \
-        "pydantic>=2.9" \
-        "aws-lambda-powertools[all]>=3.5" \
-        "sqlalchemy>=2.0" \
-        "psycopg2-binary>=2.9"
+        "psycopg[binary]>=3.1,<4" \
+        "pydantic>=2.6" \
+        "aws-lambda-powertools>=2.30"
 
 # CMD is set by each child Dockerfile, e.g.:
 # CMD ["handler.lambda_handler"]

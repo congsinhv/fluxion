@@ -1,13 +1,9 @@
-"""SQLAlchemy connection wrapper with tenant schema lookup.
+"""psycopg3 connection wrapper with tenant schema lookup and permission check.
 
-Usage pattern per request:
+Usage pattern per request (context manager):
 
-    conn = Connection()
-    try:
-        schema = conn.get_schema_name(tenant_id)
-        # Pass schema into tenant-scoped repository classes built on conn.
-    finally:
-        conn.close()
+    with Database(dsn=DATABASE_URI, tenant_schema=ctx.tenant_schema) as db:
+        allowed = db.has_permission(ctx.cognito_sub, ctx.tenant_id, "device:read")
 
 See design-patterns.md §5 (Repository Pattern) and §11 (Tenant-per-Schema).
 """
@@ -15,96 +11,153 @@ See design-patterns.md §5 (Repository Pattern) and §11 (Tenant-per-Schema).
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Any
+from typing import Any
+
+import psycopg
+import psycopg.sql
 
 from config import DATABASE_URI, logger
 from exceptions import DatabaseError, TenantNotFoundError
-from sqlalchemy import create_engine, text
-from sqlalchemy.exc import SQLAlchemyError
 
-if TYPE_CHECKING:
-    from sqlalchemy.engine import Connection as SAConnection
-    from sqlalchemy.engine import Engine, Result
-
-# Regex guards against SQL injection via schema interpolation.
-# Only values matching this pattern may be f-string-interpolated into queries.
-# See design-patterns.md §11.2.
-_SCHEMA_NAME_RE: re.Pattern[str] = re.compile(r"^tenant_[a-z0-9_]{1,40}$")
+# Matches accesscontrol.tenants.ck_tenants_schema_name_format.
+# Bare names only: dev1, acme, fpt (no prefix). See design-patterns.md §11.2.
+_SCHEMA_NAME_RE: re.Pattern[str] = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
 
 
-class Connection:
-    """SQLAlchemy connection wrapper with tenant schema lookup and safe execute.
+def _validate_schema(schema_name: str) -> str:
+    """Raise DatabaseError if schema_name fails the safety regex.
 
-    Wraps a single SQLAlchemy connection for the lifetime of one Lambda
-    invocation. Resolves tenant_id → schema_name via
-    ``public.t_tenant_schema_mapping`` and regex-validates the result before
-    any schema-qualified query may use it.
+    Args:
+        schema_name: Candidate schema name to validate.
+
+    Returns:
+        The validated schema_name, unchanged.
 
     Raises:
-        DatabaseError: If the initial connection to PostgreSQL fails.
+        DatabaseError: Name does not match ``^[a-z][a-z0-9_]{0,39}$``.
+    """
+    if not _SCHEMA_NAME_RE.fullmatch(schema_name):
+        raise DatabaseError(f"invalid schema_name: {schema_name!r}")
+    return schema_name
+
+
+class Database:
+    """psycopg3 connection bound to a single Lambda invocation.
+
+    Opens one synchronous connection at construction; closes it in __exit__.
+    All schema-qualified SQL uses ``psycopg.sql.Identifier`` — never f-string
+    for schema names (defense-in-depth against tenant-schema injection).
+
+    Args:
+        dsn: PostgreSQL DSN (``DATABASE_URI`` env var in production).
+        tenant_schema: Validated tenant schema name (from auth context).
+
+    Raises:
+        DatabaseError: If the initial connection fails.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, dsn: str = DATABASE_URI, tenant_schema: str = "") -> None:
+        self._dsn = dsn
+        self._tenant_schema = _validate_schema(tenant_schema) if tenant_schema else ""
+        self._conn: psycopg.Connection[Any] | None = None
+
+    def __enter__(self) -> Database:
         try:
-            self._engine: Engine = create_engine(DATABASE_URI)
-            self._connection: SAConnection = self._engine.connect()
-        except SQLAlchemyError as exc:
+            self._conn = psycopg.connect(self._dsn, row_factory=psycopg.rows.dict_row)
+        except psycopg.Error as exc:
             logger.exception("db.connect_failed")
             raise DatabaseError("database connection failed") from exc
+        return self
 
-    def get_schema_name(self, tenant_id: str) -> str:
-        """Resolve tenant_id to a validated schema name.
+    def __exit__(self, *_: object) -> None:
+        if self._conn is not None:
+            try:
+                self._conn.close()
+            except psycopg.Error:
+                logger.warning("db.close_failed")
+            finally:
+                self._conn = None
 
-        Queries ``public.t_tenant_schema_mapping`` and validates the returned
-        schema name against ``^tenant_[a-z0-9_]{1,40}$`` before returning.
-        The validated value is safe for f-string interpolation into SQL.
+    # ------------------------------------------------------------------
+    # accesscontrol helpers
+    # ------------------------------------------------------------------
+
+    def get_schema_name(self, tenant_id: int) -> str:
+        """Resolve tenant BIGINT id to a validated schema name.
 
         Args:
-            tenant_id: The tenant UUID from the Cognito auth claim.
+            tenant_id: The tenant id from the Cognito auth claim.
 
         Returns:
-            Validated schema name (e.g. ``"tenant_acme"``).
+            Validated schema name (e.g. ``"dev1"``).
 
         Raises:
-            TenantNotFoundError: No mapping row exists for tenant_id.
-            DatabaseError: Query failed or schema name failed regex validation.
+            TenantNotFoundError: No row exists for tenant_id.
+            DatabaseError: Query failed or schema name fails regex.
         """
-        query = text(
-            """
-            SELECT tsm.schema_name
-            FROM public.t_tenant_schema_mapping tsm
-            WHERE tsm.tenant_id = :tenant_id
-            """
-        )
+        conn = self._require_conn()
         try:
-            row = self._execute(query, {"tenant_id": tenant_id}).fetchone()
-        except SQLAlchemyError as exc:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT schema_name FROM accesscontrol.tenants WHERE id = %s",
+                    (tenant_id,),
+                )
+                row = cur.fetchone()
+        except psycopg.Error as exc:
             logger.exception("db.get_schema_name_failed", extra={"tenant_id": tenant_id})
             raise DatabaseError("tenant lookup failed") from exc
 
         if not row:
-            raise TenantNotFoundError(tenant_id)
+            raise TenantNotFoundError(str(tenant_id))
 
-        # SQLAlchemy Row attribute access returns Any; cast explicitly so mypy
-        # can verify downstream usage as str.
-        schema_name: str = str(row._mapping["schema_name"])  # noqa: SLF001
-        if not _SCHEMA_NAME_RE.fullmatch(schema_name):
-            raise DatabaseError(f"invalid schema_name in mapping: {schema_name!r}")
-        return schema_name
+        return _validate_schema(str(row["schema_name"]))
 
-    def _execute(self, query: Any, params: dict[str, Any] | None = None) -> Result:
-        """Execute a SQLAlchemy text() query with named parameters.
+    def has_permission(self, cognito_sub: str, tenant_id: int, code: str) -> bool:
+        """Check whether a user holds a permission, optionally scoped to tenant.
+
+        Joins accesscontrol.users → users_permissions → permissions.
+        A NULL tenant_id on the grant row means a global (super-admin) grant.
 
         Args:
-            query: A ``sqlalchemy.text()`` expression.
-            params: Named parameter dict (``{":name": value}`` style).
+            cognito_sub: User's Cognito subject claim (from event.identity.claims.sub).
+            tenant_id: Tenant BIGINT id (from Cognito custom claim).
+            code: Permission code to check (e.g. ``"device:read"``).
 
         Returns:
-            SQLAlchemy Result object.
-        """
-        return self._connection.execute(query, params or {})
+            True if the user holds the permission for the tenant (or globally).
 
-    def close(self) -> None:
-        """Close the connection and dispose of the engine connection pool."""
-        self._connection.close()
-        self._engine.dispose()
+        Raises:
+            DatabaseError: Query execution failed.
+        """
+        conn = self._require_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT 1
+                    FROM accesscontrol.users u
+                    JOIN accesscontrol.users_permissions up ON u.id = up.user_id
+                    JOIN accesscontrol.permissions p       ON p.id = up.permission_id
+                    WHERE u.cognito_sub = %s
+                      AND p.code = %s
+                      AND (up.tenant_id = %s OR up.tenant_id IS NULL)
+                    LIMIT 1
+                    """,
+                    (cognito_sub, code, tenant_id),
+                )
+                return cur.fetchone() is not None
+        except psycopg.Error as exc:
+            logger.exception(
+                "db.has_permission_failed",
+                extra={"cognito_sub": cognito_sub, "code": code},
+            )
+            raise DatabaseError("permission check failed") from exc
+
+    # ------------------------------------------------------------------
+    # Internal
+    # ------------------------------------------------------------------
+
+    def _require_conn(self) -> psycopg.Connection[Any]:
+        if self._conn is None:
+            raise DatabaseError("Database used outside context manager")
+        return self._conn
