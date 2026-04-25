@@ -86,7 +86,15 @@ jobs:
       - run: uv sync --all-extras --dev
       - run: uv run ruff format --check .
       - run: uv run ruff check .
-      - run: uv run mypy --strict modules/
+      - name: mypy per module (sibling-import resolution per module pyproject)
+        run: |
+          set -e
+          for module_dir in modules/*/; do
+            [ -f "$module_dir/pyproject.toml" ] || continue
+            echo "::group::mypy $module_dir"
+            (cd "$module_dir" && uv run mypy --strict src)
+            echo "::endgroup::"
+          done
       - name: pytest per module
         run: |
           set -e
