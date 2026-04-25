@@ -33,3 +33,10 @@ ignore = ["E501"]
 [tool.mypy]
 strict = true
 python_version = "3.12"
+explicit_package_bases = true
+mypy_path = "src"
+
+[[tool.mypy.overrides]]
+# Local Lambda modules have no py.typed — ignore missing stubs for intra-module imports.
+module = ["auth", "config", "db", "exceptions", "base_types"]
+ignore_missing_imports = true

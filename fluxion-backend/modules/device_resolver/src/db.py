@@ -132,7 +132,7 @@ class Database:
             NotFoundError: No device row for device_id.
             DatabaseError: Query execution failed.
         """
-        schema = psycopg.sql.Identifier(schema)
+        schema_id = psycopg.sql.Identifier(schema)
         conn = self._require_conn()
         try:
             with conn.cursor() as cur:
@@ -158,7 +158,7 @@ class Database:
                         LEFT JOIN {schema}.device_informations di ON di.device_id = d.id
                         WHERE d.id = %s
                         """
-                    ).format(schema=schema),
+                    ).format(schema=schema_id),
                     (device_id,),
                 )
                 row = cur.fetchone()
@@ -187,7 +187,7 @@ class Database:
         Returns:
             Tuple of (rows, nextToken | None).
         """
-        schema = psycopg.sql.Identifier(schema)
+        schema_id = psycopg.sql.Identifier(schema)
         after_uuid = _decode_cursor(after_id) if after_id else None
         conn = self._require_conn()
 
@@ -236,7 +236,7 @@ class Database:
             ORDER BY d.id
             LIMIT %s
             """
-        ).format(schema=schema, conditions=conditions)
+        ).format(schema=schema_id, conditions=conditions)
 
         try:
             with conn.cursor() as cur:
@@ -269,7 +269,7 @@ class Database:
         Returns:
             Tuple of (rows, nextToken | None).
         """
-        schema = psycopg.sql.Identifier(schema)
+        schema_id = psycopg.sql.Identifier(schema)
         after_uuid = _decode_cursor(after_id) if after_id else None
         conn = self._require_conn()
 
@@ -281,7 +281,7 @@ class Database:
             extra_clause = psycopg.sql.SQL(
                 " AND (m.created_at, m.id) < "
                 "(SELECT created_at, id FROM {schema}.milestones WHERE id = %s)"
-            ).format(schema=schema)
+            ).format(schema=schema_id)
             params.append(after_uuid)
 
         params.append(limit + 1)
@@ -296,7 +296,7 @@ class Database:
             ORDER BY m.created_at DESC, m.id DESC
             LIMIT %s
             """
-        ).format(schema=schema, extra=extra_clause)
+        ).format(schema=schema_id, extra=extra_clause)
 
         try:
             with conn.cursor() as cur:

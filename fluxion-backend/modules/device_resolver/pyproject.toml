@@ -25,3 +25,10 @@ ignore = ["E501", "N815", "N806"]  # N815: camelCase Pydantic fields; N806: Mock
 strict = true
 python_version = "3.12"
 explicit_package_bases = true
+mypy_path = "src"
+exclude = ["src/handler\\.py"]
+
+[[tool.mypy.overrides]]
+# Local Lambda modules have no py.typed — ignore missing stubs for intra-module imports.
+module = ["auth", "config", "db", "exceptions", "schema_types", "utils"]
+ignore_missing_imports = true

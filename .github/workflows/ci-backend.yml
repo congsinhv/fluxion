@@ -42,8 +42,17 @@ jobs:
       - name: Ruff lint
         run: uv run ruff check .
 
-      - name: Mypy (strict)
-        run: uv run mypy --strict modules/
+      - name: Mypy (strict, per-module)
+        # Each Lambda module has its own pyproject.toml with mypy overrides
+        # for sibling-import resolution, mirroring the pytest pattern below.
+        run: |
+          set -e
+          for module_dir in modules/*/; do
+            [ -f "$module_dir/pyproject.toml" ] || continue
+            echo "::group::mypy $module_dir"
+            (cd "$module_dir" && uv run mypy --strict src)
+            echo "::endgroup::"
+          done
 
       - name: Pytest with coverage (per-module)
         # Each Lambda module has its own pytest config with pythonpath = ["src"],

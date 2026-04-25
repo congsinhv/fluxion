@@ -144,7 +144,7 @@ class Database:
         is achieved via a join to policies (states reachable by the given service).
         If no filter, return all states ordered by id.
         """
-        schema = psycopg.sql.Identifier(schema)
+        schema_id = psycopg.sql.Identifier(schema)
         conn = self._require_conn()
         if service_type_id is not None:
             query = psycopg.sql.SQL(
@@ -155,11 +155,11 @@ class Database:
                 WHERE p.service_type_id = %s
                 ORDER BY s.id
                 """
-            ).format(schema=schema)
+            ).format(schema=schema_id)
             params: list[Any] = [service_type_id]
         else:
             query = psycopg.sql.SQL("SELECT id, name FROM {schema}.states ORDER BY id").format(
-                schema=schema
+                schema=schema_id
             )
             params = []
         try:
@@ -174,7 +174,7 @@ class Database:
         self, service_type_id: int | None = None, *, schema: str
     ) -> list[dict[str, Any]]:
         """Return all policies rows, optionally filtered by service_type_id."""
-        schema = psycopg.sql.Identifier(schema)
+        schema_id = psycopg.sql.Identifier(schema)
         conn = self._require_conn()
         if service_type_id is not None:
             query = psycopg.sql.SQL(
@@ -184,12 +184,12 @@ class Database:
                 WHERE service_type_id = %s
                 ORDER BY id
                 """
-            ).format(schema=schema)
+            ).format(schema=schema_id)
             params: list[Any] = [service_type_id]
         else:
             query = psycopg.sql.SQL(
                 "SELECT id, name, state_id, service_type_id, color FROM {schema}.policies ORDER BY id"
-            ).format(schema=schema)
+            ).format(schema=schema_id)
             params = []
         try:
             with conn.cursor() as cur:
@@ -207,7 +207,7 @@ class Database:
         schema: str,
     ) -> list[dict[str, Any]]:
         """Return all actions rows, optionally filtered by from_state_id and/or service_type_id."""
-        schema = psycopg.sql.Identifier(schema)
+        schema_id = psycopg.sql.Identifier(schema)
         conn = self._require_conn()
 
         clauses: list[psycopg.sql.Composable] = []
@@ -231,7 +231,7 @@ class Database:
             {where}
             ORDER BY name
             """
-        ).format(schema=schema, where=where)
+        ).format(schema=schema_id, where=where)
         try:
             with conn.cursor() as cur:
                 cur.execute(query, params)
@@ -242,11 +242,11 @@ class Database:
 
     def list_services(self, *, schema: str) -> list[dict[str, Any]]:
         """Return all services rows ordered by id."""
-        schema = psycopg.sql.Identifier(schema)
+        schema_id = psycopg.sql.Identifier(schema)
         conn = self._require_conn()
         query = psycopg.sql.SQL(
             "SELECT id, name, is_enabled FROM {schema}.services ORDER BY id"
-        ).format(schema=schema)
+        ).format(schema=schema_id)
         try:
             with conn.cursor() as cur:
                 cur.execute(query)
@@ -324,7 +324,7 @@ class Database:
             fields:  Dict of Pydantic camelCase field names → values (exclude_unset).
             col_map: Mapping from camelCase name → snake_case DB column name.
         """
-        schema = psycopg.sql.Identifier(schema)
+        schema_id = psycopg.sql.Identifier(schema)
         conn = self._require_conn()
 
         # Map camelCase fields to DB column names; skip unknown keys.
@@ -340,7 +340,7 @@ class Database:
         query = psycopg.sql.SQL(
             "UPDATE {schema}.{table} SET {set} WHERE {pk} = %s RETURNING *"
         ).format(
-            schema=schema,
+            schema=schema_id,
             table=psycopg.sql.Identifier(table),
             set=set_clauses,
             pk=psycopg.sql.Identifier(pk_col),
