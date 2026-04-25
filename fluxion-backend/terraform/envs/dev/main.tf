@@ -44,6 +44,82 @@ module "auth" {
   env                  = var.env
 }
 
+module "resolver_device" {
+  source        = "../../modules/lambda_function"
+  function_name = "${var.resource_name_prefix}-device-resolver"
+  image_uri     = "${module.ecr.repository_urls["device_resolver"]}:latest"
+  env = {
+    DATABASE_URI            = local.database_uri
+    POWERTOOLS_SERVICE_NAME = "device_resolver"
+  }
+  vpc_config = {
+    subnet_ids = module.network.private_subnet_ids
+    sg_id      = module.network.lambda_sg_id
+  }
+}
+
+module "resolver_platform" {
+  source        = "../../modules/lambda_function"
+  function_name = "${var.resource_name_prefix}-platform-resolver"
+  image_uri     = "${module.ecr.repository_urls["platform_resolver"]}:latest"
+  env = {
+    DATABASE_URI            = local.database_uri
+    POWERTOOLS_SERVICE_NAME = "platform_resolver"
+  }
+  vpc_config = {
+    subnet_ids = module.network.private_subnet_ids
+    sg_id      = module.network.lambda_sg_id
+  }
+}
+
+module "resolver_user" {
+  source        = "../../modules/lambda_function"
+  function_name = "${var.resource_name_prefix}-user-resolver"
+  image_uri     = "${module.ecr.repository_urls["user_resolver"]}:latest"
+  env = {
+    DATABASE_URI            = local.database_uri
+    POWERTOOLS_SERVICE_NAME = "user_resolver"
+    COGNITO_USER_POOL_ID    = module.auth.user_pool_id
+  }
+  vpc_config = {
+    subnet_ids = module.network.private_subnet_ids
+    sg_id      = module.network.lambda_sg_id
+  }
+  extra_policy_statements = [
+    {
+      effect  = "Allow"
+      actions = [
+        "cognito-idp:AdminCreateUser",
+        "cognito-idp:AdminDeleteUser",
+        "cognito-idp:AdminGetUser",
+        "cognito-idp:AdminUpdateUserAttributes",
+      ]
+      resources = [module.auth.user_pool_arn]
+    },
+  ]
+}
+
+module "api" {
+  source               = "../../modules/api"
+  resource_name_prefix = var.resource_name_prefix
+  env                  = var.env
+  aws_region           = var.aws_region
+  schema_path          = "${path.module}/../../../schema.graphql"
+  cognito_user_pool_id = module.auth.user_pool_id
+  lambda_resolver_arns = {
+    device   = module.resolver_device.invoke_arn
+    platform = module.resolver_platform.invoke_arn
+    user     = module.resolver_user.invoke_arn
+  }
+  log_retention_days  = 14
+  log_field_log_level = "ERROR"
+  tags                = local.ssm_tags
+}
+
+data "aws_secretsmanager_secret_version" "db" {
+  secret_id = module.database.secret_name
+}
+
 locals {
   ssm_prefix = "/fluxion/${var.env}"
 
@@ -59,6 +135,11 @@ locals {
     for p in local.lambda_module_paths :
     dirname(p) if !startswith(dirname(p), "_")
   ]
+
+  # Construct psycopg3 DSN from RDS endpoint + Secrets Manager credentials.
+  # Secret JSON shape: {"username": "...", "password": "..."} (set by database module).
+  _db_secret   = jsondecode(data.aws_secretsmanager_secret_version.db.secret_string)
+  database_uri = "postgresql://${local._db_secret.username}:${local._db_secret.password}@${module.database.effective_endpoint}/fluxion"
 }
 
 module "ecr" {
@@ -151,5 +232,33 @@ resource "aws_ssm_parameter" "cognito_issuer_url" {
   name  = "${local.ssm_prefix}/auth/issuer-url"
   type  = "String"
   value = module.auth.issuer_url
+  tags  = local.ssm_tags
+}
+
+resource "aws_ssm_parameter" "appsync_api_id" {
+  name  = "${local.ssm_prefix}/api/api-id"
+  type  = "String"
+  value = module.api.api_id
+  tags  = local.ssm_tags
+}
+
+resource "aws_ssm_parameter" "appsync_graphql_endpoint" {
+  name  = "${local.ssm_prefix}/api/graphql-endpoint"
+  type  = "String"
+  value = module.api.graphql_endpoint
+  tags  = local.ssm_tags
+}
+
+resource "aws_ssm_parameter" "appsync_realtime_endpoint" {
+  name  = "${local.ssm_prefix}/api/realtime-endpoint"
+  type  = "String"
+  value = module.api.realtime_endpoint
+  tags  = local.ssm_tags
+}
+
+resource "aws_ssm_parameter" "appsync_lambda_invoke_role_arn" {
+  name  = "${local.ssm_prefix}/api/lambda-invoke-role-arn"
+  type  = "String"
+  value = module.api.appsync_lambda_invoke_role_arn
   tags  = local.ssm_tags
 }

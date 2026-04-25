@@ -1,42 +1,64 @@
-"""Lambda entry point skeleton.
+"""Lambda entry point — AppSync field dispatch.
 
-Replace the body with field dispatch (AppSync) or SQS record loop when
-scaffolding a real Lambda from this template. See design-patterns.md §4.
+Shape (design-patterns.md §4):
+  1. Read fieldName from event["info"]["fieldName"].
+  2. Look up FIELD_HANDLERS dispatch table.
+  3. Call handler(event["arguments"], ctx, correlation_id).
+  4. Catch FluxionError → AppSync error response.
 
-Import style: no `src.` prefix — Dockerfile copies src/ flat into
-LAMBDA_TASK_ROOT; pytest pythonpath = ["src"] mirrors this.
+When scaffolding a real Lambda:
+  - Populate FIELD_HANDLERS with real field handler functions.
+  - Remove the _handle_not_implemented stub.
+  - Handlers decorated with @permission_required receive (args, ctx, cid).
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from config import logger
-from exceptions import FluxionError
+from exceptions import FluxionError, UnknownFieldError
+
+# ---------------------------------------------------------------------------
+# Field handler registry — replace stubs when scaffolding a real Lambda.
+# Each value must be callable as: handler(args, ctx, correlation_id) -> Any
+# ---------------------------------------------------------------------------
+
+FieldHandler = Callable[[dict[str, Any], Any, str], Any]
+
+FIELD_HANDLERS: dict[str, FieldHandler] = {
+    # "getDevice": handle_get_device,   # example — uncomment when scaffolding
+}
 
 
-def lambda_handler(_event: dict[str, Any], context: Any) -> dict[str, Any]:
-    """AppSync / SQS entry point.
-
-    Replace the body with field dispatch or SQS record loop when scaffolding
-    a real Lambda from this template. Rename _event to event once the body
-    reads from it.
+def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
+    """AppSync Lambda direct resolver entry point.
 
     Args:
-        _event: AppSync resolver event or SQS event dict (unused in template).
+        event: AppSync resolver event with ``info.fieldName`` and ``arguments``.
         context: AWS Lambda context object.
 
     Returns:
-        AppSync response dict or SQS batch response.
-
-    Raises:
-        NotImplementedError: Always — template is not deployable as-is.
+        Field handler result or AppSync error dict on ``FluxionError``.
     """
+    correlation_id: str = getattr(context, "aws_request_id", "local")
+    field: str = event.get("info", {}).get("fieldName", "")
+
     logger.info(
-        "handler.invoked",
-        extra={"request_id": getattr(context, "aws_request_id", None)},
+        "resolver.invoked",
+        extra={"field": field, "correlation_id": correlation_id},
     )
+
     try:
-        raise NotImplementedError("_template handler — replace before deploy")
+        handler = FIELD_HANDLERS.get(field)
+        if handler is None:
+            raise UnknownFieldError(f"no handler for field: {field!r}")
+        result: dict[str, Any] = handler(event.get("arguments", {}), event, correlation_id)
+        return result
     except FluxionError as exc:
+        logger.warning(
+            "resolver.error",
+            extra={"field": field, "error_type": exc.code, "correlation_id": correlation_id},
+        )
         return exc.to_appsync_error()

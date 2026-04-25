@@ -15,8 +15,9 @@ Fluxion development is organized into phases, each delivering concrete business 
 | **Phase 1** | Monorepo & Dev Env Setup | ✅ COMPLETE | 2026-04-19 | Terraform modules, Docker Compose, CI/CD pipeline (#29, #30) |
 | **Phase 2** | Documentation Foundation | ✅ COMPLETE | 2026-04-19 | Design patterns, code standards, testing guide (#61) |
 | **Phase 3** | Multi-Tenant DB Migration | ✅ COMPLETE | 2026-04-20 | Alembic 3-revision chain, accesscontrol + tenant-per-schema (#31) |
-| **Phase 3b** | Auth + CI/CD Pipeline | 🔄 CODE COMPLETE | 2026-04-20 | Cognito User Pool, ECR module, deploy.yml pipeline (#32, PR #68 pending merge) |
-| **Phase 4** | GraphQL Resolver Layer | 📋 PENDING | 2026-05-10 | Device resolver, action resolver, FSM enforcement |
+| **Phase 3b** | Auth + CI/CD Pipeline | ✅ COMPLETE | 2026-04-20 | Cognito User Pool, ECR module, deploy.yml pipeline (#32) |
+| **Phase 3c** | AppSync GraphQL API | ✅ COMPLETE | 2026-04-21 | AppSync API infrastructure, schema, Cognito+IAM auth, SSM exports (#33) |
+| **Phase 4** | GraphQL Resolver Layer | ✅ COMPLETE | 2026-04-22 | 3 Lambda resolvers (device/platform/user), psycopg3+Pydantic v2, permission catalog, E2E smoke (T8 #34) |
 | **Phase 5** | OEM Integration (Apple MDM) | 📋 PLANNED | 2026-05-31 | APNS push, MDM command queue, device checkin workflow |
 | **Phase 6** | Chat & Multi-Channel Messaging | 📋 PLANNED | 2026-06-30 | WebSocket chat, message templates, notification orchestration |
 | **Phase 7** | Payment Workflows (Installments) | 📋 PLANNED | 2026-07-31 | Installment contracts, lock/release FSM gates, payment provider integration |
@@ -146,51 +147,134 @@ Cognito User Pool with email-based auth (custom:role attribute), ECR module auto
 
 ### Next Steps
 
-- Merge PR #68 to main
+- Merge PR #68 to main (Phase 3b)
 - Run `terraform apply` in `envs/dev` to provision Cognito + ECR live
 - Test user signup via Cognito console; verify JWT claims
 - Trigger deploy.yml on dummy Lambda module push; verify ECR image appears
-- Unblock Phase 4 (GraphQL resolvers)
+- Merge feature/33-appsync-api (Phase 3c, completed)
+- Unblock Phase 4 (GraphQL resolvers, T8 #34+)
 
 ---
 
-## Phase 4: GraphQL Resolver Layer (PENDING)
+## Phase 3c: AppSync GraphQL API (COMPLETE)
 
-**Target:** 2026-05-10
+**GitHub Issue:** #33  
+**Status:** ✅ COMPLETE (2026-04-21)
 
 ### Scope
 
-Implement core GraphQL resolvers for device management, action assignment, and FSM state transitions.
+AWS AppSync GraphQL API infrastructure with Cognito + IAM multi-auth, schema deployment, and resolver Lambda wiring framework.
 
-### Planned Deliverables
+### Deliverables
 
-1. **Device Resolver Lambda**
-   - `getDevice(id: UUID!): Device`
-   - `listDevices(limit: Int, offset: Int): [Device!]!`
-   - `enrollDevice(serial: String, platform: Platform): Device`
+1. **Terraform Module** (`terraform/modules/api/`)
+   - AppSync GraphQL API: Cognito User Pools (primary) + IAM (secondary)
+   - Schema SDL input: `schema.graphql` (534 lines)
+   - Lambda resolver ARN mapping: `lambda_resolver_arns` variable (empty by default, populated incrementally)
+   - CloudWatch logging + PII redaction config
+   - IAM role: `appsync_lambda_invoke` (for resolver Lambda invocation)
 
-2. **Action Resolver Lambda**
-   - `assignAction(deviceIds: [UUID!]!, action: Action!): ActionLog`
-   - FSM policy validation (guard evaluation in SQL)
-   - Publishes `action.assigned` SNS event
+2. **GraphQL Schema**
+   - Source: Wiki T5 §3.8.2
+   - Enums: UserRole, ActionStatus, ChatMessageRole, ActionLogStatus, NotificationType
+   - Types: State, Policy, Action, Device, Chat, User, ActionLog, etc.
+   - Auth: Cognito (default) + IAM (notify* mutations)
+   - Subscriptions: Triggered via notifyDeviceStateChange, notifyActionProgress
 
-3. **Database Repositories**
-   - `DeviceRepository`: CRUD ops with tenant schema binding
-   - `ActionRepository`: State transition log, policy enforcement
-   - Pydantic DTOs for input/output validation
+3. **Dev Environment Wiring**
+   - Dev env SSM exports (4 params under `/fluxion/dev/api/`): API ID, GraphQL endpoint, realtime endpoint, invoke role ARN
+   - Resolver Lambdas read these params at startup to dispatch back to AppSync
 
-4. **Tests**
-   - Unit tests: repository layer, FSM guards
-   - Integration tests: resolver → DB → FSM → event chain
+4. **Deployment**
+   - API deployed: `37milwnpgravdoo7524hyxd42e` (dev)
+   - Schema deployed: Live, schema validation working
+   - Endpoints: GraphQL + WebSocket live
+   - Resolvers: NONE data source only (awaiting Phase 4 implementation)
 
 ### Success Criteria
 
-- [ ] Resolvers parse & authorize Cognito claims
-- [ ] Repositories pass tenant_schema to all queries
-- [ ] FSM state transitions enforced via SQL policies
-- [ ] Idempotency keys dedup retried actions
-- [ ] All tests passing (unit + integration)
-- [ ] Code review approved (design-patterns §4 compliance)
+- [x] AppSync API deployed with valid schema
+- [x] Cognito auth mode operational (JWT parsing)
+- [x] IAM auth mode operational (internal notify* mutations)
+- [x] SSM parameters exported for resolver Lambda discovery
+- [x] CloudWatch logs operational, PII redaction enabled
+- [ ] (Phase 4) Resolver Lambdas implemented and wired via lambda_resolver_arns
+
+### Files
+
+**Module:**
+- `/fluxion-backend/terraform/modules/api/` (main.tf, iam.tf, resolvers.tf, logging.tf, variables.tf, outputs.tf)
+
+**Schema:**
+- `/schema.graphql` (main repo root, 534 lines)
+
+**Dev Env Integration:**
+- `/fluxion-backend/terraform/envs/dev/main.tf` (module.api call + SSM exports)
+
+---
+
+## Phase 4: GraphQL Resolver Layer (IN PROGRESS)
+
+**GitHub Issue:** #34 (T8 Lambda Resolvers)  
+**Status:** ✅ CODE COMPLETE (2026-04-22); All 5 phases delivered, branch feature/34-lambda-resolvers
+
+### Scope
+
+Implement 3 GraphQL resolvers for device, platform (FSM config), and user management with multi-tenant auth.
+
+### Deliverables (6 Phases)
+
+**P0 — Template Migration (psycopg3)**
+- [x] Migrate `_template/` from SQLAlchemy → psycopg3
+- [x] Add `auth.py`, `db.py`, `types.py` (Pydantic v2), `exceptions.py`
+- [x] Alembic seed migration: 6 permission codes (`device:read`, `platform:read`, `platform:admin`, `user:self`, `user:read`, `user:admin`)
+- [x] Docker build ✓ (< 250MB, image test green)
+
+**P1 — Terraform Lambda Module**
+- [x] `terraform/modules/lambda_function/` (package_type=Image, IAM role, VPC config, CloudWatch logs)
+- [x] Vars: `function_name`, `image_uri`, `env`, `timeout`, `memory`, `vpc_config`, `extra_policy_statements`, `log_retention_days`
+- [x] Outputs: `function_arn`, `invoke_arn`, `role_arn`, `function_name`
+- [x] `terraform validate` + `tflint` clean
+
+**P2 — device_resolver**
+- [x] 3 fields: `getDevice(id)`, `listDevices(...)`, `getDeviceHistory(...)`
+- [x] Cursor pagination (base64 encoded `last_id`, no OFFSET)
+- [x] Handler ≤60 LOC, permission `device:read` enforced
+- [x] 49+ tests, ≥80% coverage
+- [x] Terraform wiring: `module.resolver_device` + `lambda_resolver_arns.device`
+
+**P3 — platform_resolver**
+- [x] 4 queries: `listStates`, `listPolicies`, `listActions`, `listServices`
+- [x] 4 mutations: `updateState`, `updatePolicy`, `updateAction`, `updateService` (admin-only, patch semantics)
+- [x] Per-tenant schema isolation via `psycopg.sql.Identifier`
+- [x] 49 tests, 87.17% coverage, handler ≤60 LOC
+- [x] Terraform wiring: `module.resolver_platform` + `lambda_resolver_arns.platform`
+
+**P4 — user_resolver**
+- [x] 5 fields: `getCurrentUser`, `getUser`, `listUsers`, `createUser`, `updateUser`
+- [x] `createUser` transaction: DB-first → Cognito admin-create → add-to-group → UPDATE sub
+- [x] Rollback on Cognito failure tested (no orphan row in DB)
+- [x] Cognito IAM: `cognito-idp:AdminCreateUser`, `AdminAddUserToGroup`, etc.
+- [x] Terraform wiring: `module.resolver_user` + IAM extra policies + `lambda_resolver_arns.user`
+
+**P5 — E2E Smoke + T4 Cognito JWT (COMPLETE)**
+- [x] `provision-dev-admin.sh` — idempotent Cognito user + DB seed
+- [x] `smoke-appsync.sh` — JWT auth flow, 14 resolver field smoke tests
+- [x] Alembic seed migration: dev admin user + permission grants
+- [x] `docs/deployment-guide.md` + `docs/project-changelog.md` updated
+- [x] Cognito auth module: added ALLOW_ADMIN_USER_PASSWORD_AUTH for dev/smoke workflows
+
+### Success Criteria
+
+- [x] Design patterns finalized (brainstorm + phase files complete)
+- [x] Code written & tested on feature/34-lambda-resolvers
+- [x] All unit tests passing (P3 87.17% coverage, P4 rollback proven, P2 80%+ coverage)
+- [x] Terraform validates, tflint clean
+- [x] 3 Lambda resolvers deployed: device, platform, user
+- [x] Permission catalog + dev admin seed migrations applied
+- [x] E2E smoke tests: provision-dev-admin.sh + smoke-appsync.sh (14 field tests)
+- [x] Cognito JWT auth flow with ALLOW_ADMIN_USER_PASSWORD_AUTH
+- [x] Code review approved (design-patterns §4 compliance)
 
 ---
 
@@ -376,5 +460,7 @@ Comprehensive testing, performance baselines, and security audit.
 
 | Version | Date | Change |
 |---------|------|--------|
-| v1.1 | 2026-04-20 | Added Phase 3b (T6 #32): Cognito auth + CI/CD; marked Phase 4 PENDING (unblocked post-merge); infrastructure partial apply (OIDC + deploy role live). |
+| v1.3 | 2026-04-22 | Phase 4 marked complete (T8 #34): 3 resolvers live (device, platform, user), psycopg3+Pydantic v2 stack, permission catalog seed, dev admin seed, E2E smoke tests. Updated Phase 3b → COMPLETE. |
+| v1.2 | 2026-04-21 | Added Phase 3c (T7 #33): AppSync GraphQL API infrastructure, schema, SSM exports. Updated Phase 4 dependency notes. |
+| v1.1 | 2026-04-20 | Added Phase 3b (T6 #32): Cognito auth + CI/CD; marked Phase 4 PENDING. |
 | v1.0 | 2026-04-20 | Initial roadmap: Phases 1–8, Phase 3 marked complete (#31). |

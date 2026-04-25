@@ -47,9 +47,13 @@ resource "aws_cognito_user_pool_client" "main" {
   user_pool_id = aws_cognito_user_pool.main.id
 
   # SRP for browser SDK; refresh for long-lived sessions.
+  # ALLOW_ADMIN_USER_PASSWORD_AUTH enables admin-initiate-auth used by
+  # provision-dev-admin.sh and smoke-appsync.sh (server-side scripts only —
+  # never exposed to browser clients).
   explicit_auth_flows = [
     "ALLOW_USER_SRP_AUTH",
     "ALLOW_REFRESH_TOKEN_AUTH",
+    "ALLOW_ADMIN_USER_PASSWORD_AUTH",
   ]
 
   access_token_validity  = 1

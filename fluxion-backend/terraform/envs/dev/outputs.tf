@@ -33,3 +33,18 @@ output "cognito_issuer_url" {
   description = "OIDC issuer URL for the Cognito pool (JWT verification)."
   value       = module.auth.issuer_url
 }
+
+output "appsync_api_id" {
+  description = "AppSync GraphQL API ID."
+  value       = module.api.api_id
+}
+
+output "appsync_graphql_endpoint" {
+  description = "AppSync HTTPS endpoint for queries and mutations."
+  value       = module.api.graphql_endpoint
+}
+
+output "appsync_realtime_endpoint" {
+  description = "AppSync WebSocket endpoint for subscriptions."
+  value       = module.api.realtime_endpoint
+}

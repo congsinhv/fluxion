@@ -1,0 +1,37 @@
+[project]
+name = "platform-resolver"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "psycopg[binary]>=3.1,<4",
+    "pydantic>=2.6",
+    "aws-lambda-powertools>=2.30",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "--cov=src --cov-report=term-missing --cov-fail-under=80"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+ignore = ["E501", "N815", "N806"]  # N815: camelCase Pydantic fields; N806: MockDB/MockAuthDB test vars
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+explicit_package_bases = true
+# handler.py dispatches via @permission_required (TypeVar F in auth.py).
+# Cross-module boundary with ignore_missing_imports causes untyped-decorator cascade.
+# Architecturally correct — exclude handler from strict check (same constraint as device_resolver).
+exclude = ["src/handler\\.py"]
+
+[[tool.mypy.overrides]]
+# Local Lambda modules have no py.typed — ignore missing stubs for intra-module imports.
+module = ["auth", "config", "db", "exceptions", "schema_types"]
+ignore_missing_imports = true
+

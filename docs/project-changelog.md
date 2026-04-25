@@ -8,10 +8,66 @@
 
 ## [Unreleased]
 
-### Added
-- Documentation: system-architecture.md (DB schema, FSM design, choreography sagas, OEM integration outline)
-- Documentation: development-roadmap.md (Phase 1–8 timeline, Phase 3 marked complete)
-- Documentation: project-changelog.md (this file)
+### In Progress
+- **Phase 4 (T7 #34) — Lambda Resolvers (IN PROGRESS, code on feature/34-lambda-resolvers):**
+  - P0 (Template migration): psycopg3 + Pydantic v2 + auth skeleton complete, Alembic seed migration for 6 permission codes
+  - P1 (Terraform lambda_function module): 5 files complete, validated
+  - P2 (device_resolver): 3 fields, ≥80% coverage, tests green
+  - P3 (platform_resolver): 8 fields (4 queries + 4 mutations), 87.17% coverage, 49 tests passing
+  - P4 (user_resolver): 5 fields, Cognito transaction coordination tested, rollback proven
+  - P5 (E2E smoke): Scripts + Alembic seed migration written, deployment docs updated, live run deferred to post-merge
+  - **Blockers:** PR #79 merge coordination; live `terraform apply` + AWS CLI smoke run awaits merge
+  - **DONE_WITH_CONCERNS:** Design & implementation complete; deployment testing deferred (no functional impact pre-merge)
+
+---
+
+## [1.2.0] - 2026-04-21
+
+### Feature: AppSync GraphQL API Infrastructure (#33)
+
+**Summary:** AWS AppSync GraphQL API with 534-line schema, Cognito User Pool + IAM multi-auth, Terraform module with lambda_resolver_arns gating, dev env fully wired with SSM param exports for resolver Lambda discovery.
+
+**Added**
+
+#### API Module (Terraform)
+
+**`terraform/modules/api/` — AppSync GraphQL API + Auth**
+- **API:** Multi-auth AppSync (primary: Cognito User Pools, secondary: IAM for internal Lambda notifications)
+- **Schema:** SDL-based, 534 lines, enums for UserRole/ActionStatus/ChatMessageRole/ActionLogStatus/NotificationType; types for State/Policy/Action/Device/Chat/etc.
+- **Schema Auth:** Default @auth(allow: groups, groups: ["ADMIN", "OPERATOR"]) on mutations; @aws_iam on notify* mutations (checkin-handler Lambda only)
+- **Lambda Resolver Gating:** Variable `lambda_resolver_arns` (map, default empty) allows incremental wiring of resolver Lambdas; empty deploy skips all Lambda data sources
+- **Logging:** CloudWatch log group with configurable field log level (ERROR default); PII redaction enabled prod/staging
+- **IAM Role:** `appsync_lambda_invoke` role for AppSync → Lambda invocation (pre-created, no resolver-specific permissions yet)
+
+#### Dev Environment Wiring
+
+**`terraform/envs/dev/main.tf` — API Module Integration**
+- Calls `module.api` with schema path, Cognito User Pool ID (from auth module), empty lambda_resolver_arns
+- Creates 3 SSM param exports under `/fluxion/dev/api/`:
+  - `/fluxion/dev/api/api-id` — AppSync API ID (37milwnpgravdoo7524hyxd42e on dev)
+  - `/fluxion/dev/api/graphql-endpoint` — GraphQL query/mutation endpoint
+  - `/fluxion/dev/api/realtime-endpoint` — WebSocket subscription endpoint
+  - `/fluxion/dev/api/lambda-invoke-role-arn` — Role ARN for resolver Lambdas to assume
+
+#### GraphQL Schema
+
+**`schema.graphql` (main repo root)**
+- Source: Wiki T5 §3.8.2 (https://github.com/congsinhv/fluxion/wiki)
+- 534 lines, machine-parseable SDL
+- Root types: Query, Mutation, Subscription (subscriptions trigger off `notifyDeviceStateChange`, `notifyActionProgress` internal mutations)
+- Resolver payloads ready for T8+ resolver Lambda implementation
+
+### Deployment Status
+
+- **Terraform:** Code merged to develop (feature/33-appsync-api)
+- **AWS:** API deployed to dev (`37milwnpgravdoo7524hyxd42e`), endpoints live, SSM params exported
+- **Resolvers:** Not implemented (T8+); currently NONE data source only (schema validation + subscriptions work, queries/mutations error until resolvers wired)
+
+### Next Steps
+
+- Merge PR #? (feature/33-appsync-api → develop)
+- Phase 4 (T8): Implement device_resolver, action_resolver, etc.; populate lambda_resolver_arns variable
+- Frontend codegen: Consume schema.graphql for TypeScript types
 
 ---
 
@@ -277,5 +333,7 @@ See [CLAUDE.md](../CLAUDE.md) for details.
 
 | Version | Date | Change |
 |---------|------|--------|
+| v1.3 | 2026-04-22 | Added #34 T4: E2E smoke (provision-dev-admin.sh, smoke-appsync.sh), Alembic dev admin seed migration, auth module ADMIN_USER_PASSWORD_AUTH flow, deployment-guide.md. Closes T7 deferred T4. |
+| v1.2 | 2026-04-21 | Added T7 (#33): AppSync GraphQL API infrastructure with Cognito+IAM auth, schema, dev env wiring, SSM exports. |
 | v1.1 | 2026-04-20 | Added Phase 3b (T6 #32) entry: Cognito auth module + CI/CD deploy pipeline (code merged, infrastructure partial apply). |
 | v1.0 | 2026-04-20 | Initial changelog with Phases 1–3 entries; Phase 3 (T6 #31) marked complete. |
