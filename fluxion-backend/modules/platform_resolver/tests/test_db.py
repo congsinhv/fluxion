@@ -178,8 +178,13 @@ def test_list_policies_with_filter() -> None:
 def test_list_actions_no_filter() -> None:
     db = _make_db()
     row = {
-        "id": ACTION_ID, "name": "Lock", "action_type_id": 5,
-        "from_state_id": 4, "service_type_id": 3, "apply_policy_id": 5, "configuration": None,
+        "id": ACTION_ID,
+        "name": "Lock",
+        "action_type_id": 5,
+        "from_state_id": 4,
+        "service_type_id": 3,
+        "apply_policy_id": 5,
+        "configuration": None,
     }
     conn = _mock_conn(rows=[row])
     db._conn = conn  # noqa: SLF001
@@ -258,8 +263,12 @@ def test_update_policy_partial_fields() -> None:
 def test_update_action_with_json_string_configuration() -> None:
     db = _make_db()
     updated = {
-        "id": ACTION_ID, "name": "Lock", "action_type_id": 5,
-        "from_state_id": 4, "service_type_id": 3, "apply_policy_id": 5,
+        "id": ACTION_ID,
+        "name": "Lock",
+        "action_type_id": 5,
+        "from_state_id": 4,
+        "service_type_id": 3,
+        "apply_policy_id": 5,
         "configuration": {"timeout": 30},
     }
     conn = _mock_conn(one_row=updated)

@@ -34,12 +34,12 @@ branch_labels = None
 depends_on = None
 
 _PERMISSIONS: list[tuple[str, str]] = [
-    ("device:read",    "List and retrieve devices within a tenant"),
-    ("platform:read",  "List and retrieve MDM platform configurations"),
+    ("device:read", "List and retrieve devices within a tenant"),
+    ("platform:read", "List and retrieve MDM platform configurations"),
     ("platform:admin", "Create, update and delete MDM platform configurations"),
-    ("user:self",      "Read and update own user profile"),
-    ("user:read",      "List and retrieve other users within a tenant"),
-    ("user:admin",     "Create, update and delete users within a tenant"),
+    ("user:self", "Read and update own user profile"),
+    ("user:read", "List and retrieve other users within a tenant"),
+    ("user:admin", "Create, update and delete users within a tenant"),
 ]
 
 
@@ -61,7 +61,7 @@ def downgrade() -> None:
     """Remove the 6 seeded permission codes (and their grants via CASCADE)."""
     codes = [code for code, _ in _PERMISSIONS]
     op.execute(
-        sa.text(
-            "DELETE FROM accesscontrol.permissions WHERE code = ANY(:codes)"
-        ).bindparams(codes=codes)
+        sa.text("DELETE FROM accesscontrol.permissions WHERE code = ANY(:codes)").bindparams(
+            codes=codes
+        )
     )

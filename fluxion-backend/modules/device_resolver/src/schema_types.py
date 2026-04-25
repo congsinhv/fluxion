@@ -133,7 +133,9 @@ class MilestoneResponse(BaseResponse):
         return cls(
             id=str(row["id"]),
             deviceId=str(row["device_id"]),
-            assignedActionId=str(row["assigned_action_id"]) if row.get("assigned_action_id") else None,
+            assignedActionId=str(row["assigned_action_id"])
+            if row.get("assigned_action_id")
+            else None,
             policyId=row.get("policy_id"),
             createdAt=to_iso(row["created_at"]) or "",
             extFields=json.dumps(ext) if ext is not None else None,

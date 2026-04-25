@@ -43,9 +43,7 @@ def build_context_from(event: dict[str, Any]) -> Context:
     try:
         tenant_id = int(raw_tenant_id)
     except (ValueError, TypeError) as exc:
-        raise InvalidInputError(
-            f"custom:tenant_id is not an integer: {raw_tenant_id!r}"
-        ) from exc
+        raise InvalidInputError(f"custom:tenant_id is not an integer: {raw_tenant_id!r}") from exc
 
     with Database() as db:
         tenant_schema = db.get_schema_name(tenant_id)

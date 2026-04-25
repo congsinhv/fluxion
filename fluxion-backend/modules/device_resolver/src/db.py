@@ -303,9 +303,7 @@ class Database:
                 cur.execute(query, params)
                 rows = [dict(r) for r in cur.fetchall()]
         except psycopg.Error as exc:
-            logger.exception(
-                "db.get_device_history_failed", extra={"device_id": device_id}
-            )
+            logger.exception("db.get_device_history_failed", extra={"device_id": device_id})
             raise DatabaseError("get_device_history query failed") from exc
 
         next_token: str | None = None

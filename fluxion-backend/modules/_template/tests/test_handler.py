@@ -38,7 +38,9 @@ def test_registered_handler_is_dispatched() -> None:
 
     FIELD_HANDLERS["_testField"] = mock_handler
     try:
-        result = lambda_handler(_make_event("_testField", {"x": 1}), MagicMock(aws_request_id="test-3"))
+        result = lambda_handler(
+            _make_event("_testField", {"x": 1}), MagicMock(aws_request_id="test-3")
+        )
     finally:
         del FIELD_HANDLERS["_testField"]
 

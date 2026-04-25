@@ -129,7 +129,9 @@ class ActionResponse(BaseResponse):
             name=row["name"],
             actionTypeId=int(row["action_type_id"]),
             fromStateId=int(row["from_state_id"]) if row.get("from_state_id") is not None else None,
-            serviceTypeId=int(row["service_type_id"]) if row.get("service_type_id") is not None else None,
+            serviceTypeId=int(row["service_type_id"])
+            if row.get("service_type_id") is not None
+            else None,
             applyPolicyId=int(row["apply_policy_id"]),
             configuration=json.dumps(cfg) if cfg is not None else None,
         )

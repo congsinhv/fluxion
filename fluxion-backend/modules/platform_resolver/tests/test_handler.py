@@ -269,9 +269,7 @@ def test_update_state_missing_name_returns_invalid_input() -> None:
     ctx_p, auth_p = _mock_auth_allow()
     with ctx_p, auth_p as MockAuthDB:
         MockAuthDB.return_value.__enter__.return_value.has_permission.return_value = True
-        result = lambda_handler(
-            _event("updateState", {"id": 1, "input": {}}), _CONTEXT
-        )
+        result = lambda_handler(_event("updateState", {"id": 1, "input": {}}), _CONTEXT)
     assert result["errorType"] == "INVALID_INPUT"
 
 
@@ -279,9 +277,7 @@ def test_update_state_non_admin_blocked() -> None:
     ctx_p, auth_p = _mock_auth_allow()
     with ctx_p, auth_p as MockAuthDB:
         MockAuthDB.return_value.__enter__.return_value.has_permission.return_value = False
-        result = lambda_handler(
-            _event("updateState", {"id": 1, "input": {"name": "x"}}), _CONTEXT
-        )
+        result = lambda_handler(_event("updateState", {"id": 1, "input": {"name": "x"}}), _CONTEXT)
     assert result["errorType"] == "FORBIDDEN"
 
 
@@ -294,9 +290,7 @@ def test_update_policy_empty_input_invalid() -> None:
     ctx_p, auth_p = _mock_auth_allow()
     with ctx_p, auth_p as MockAuthDB:
         MockAuthDB.return_value.__enter__.return_value.has_permission.return_value = True
-        result = lambda_handler(
-            _event("updatePolicy", {"id": 1, "input": {}}), _CONTEXT
-        )
+        result = lambda_handler(_event("updatePolicy", {"id": 1, "input": {}}), _CONTEXT)
     assert result["errorType"] == "INVALID_INPUT"
 
 
@@ -329,9 +323,7 @@ def test_update_action_empty_input_invalid() -> None:
     ctx_p, auth_p = _mock_auth_allow()
     with ctx_p, auth_p as MockAuthDB:
         MockAuthDB.return_value.__enter__.return_value.has_permission.return_value = True
-        result = lambda_handler(
-            _event("updateAction", {"id": ACTION_ID, "input": {}}), _CONTEXT
-        )
+        result = lambda_handler(_event("updateAction", {"id": ACTION_ID, "input": {}}), _CONTEXT)
     assert result["errorType"] == "INVALID_INPUT"
 
 
@@ -367,9 +359,7 @@ def test_update_service_empty_input_invalid() -> None:
     ctx_p, auth_p = _mock_auth_allow()
     with ctx_p, auth_p as MockAuthDB:
         MockAuthDB.return_value.__enter__.return_value.has_permission.return_value = True
-        result = lambda_handler(
-            _event("updateService", {"id": 1, "input": {}}), _CONTEXT
-        )
+        result = lambda_handler(_event("updateService", {"id": 1, "input": {}}), _CONTEXT)
     assert result["errorType"] == "INVALID_INPUT"
 
 

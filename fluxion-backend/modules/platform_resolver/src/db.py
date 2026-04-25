@@ -135,7 +135,9 @@ class Database:
     # List queries — return all rows (optional filter); no pagination
     # ------------------------------------------------------------------
 
-    def list_states(self, service_type_id: int | None = None, *, schema: str) -> list[dict[str, Any]]:
+    def list_states(
+        self, service_type_id: int | None = None, *, schema: str
+    ) -> list[dict[str, Any]]:
         """Return all states rows, optionally filtered via policies join.
 
         Note: states table has no service_type_id column. Filter by service_type_id
@@ -156,9 +158,9 @@ class Database:
             ).format(schema=schema)
             params: list[Any] = [service_type_id]
         else:
-            query = psycopg.sql.SQL(
-                "SELECT id, name FROM {schema}.states ORDER BY id"
-            ).format(schema=schema)
+            query = psycopg.sql.SQL("SELECT id, name FROM {schema}.states ORDER BY id").format(
+                schema=schema
+            )
             params = []
         try:
             with conn.cursor() as cur:
@@ -168,7 +170,9 @@ class Database:
             logger.exception("db.list_states_failed")
             raise DatabaseError("list_states query failed") from exc
 
-    def list_policies(self, service_type_id: int | None = None, *, schema: str) -> list[dict[str, Any]]:
+    def list_policies(
+        self, service_type_id: int | None = None, *, schema: str
+    ) -> list[dict[str, Any]]:
         """Return all policies rows, optionally filtered by service_type_id."""
         schema = psycopg.sql.Identifier(schema)
         conn = self._require_conn()
@@ -264,11 +268,15 @@ class Database:
         col_map = {"name": "name"}
         return self._update_row("states", "id", state_id, fields, col_map, schema=schema)
 
-    def update_policy(self, policy_id: int, fields: dict[str, Any], *, schema: str) -> dict[str, Any]:
+    def update_policy(
+        self, policy_id: int, fields: dict[str, Any], *, schema: str
+    ) -> dict[str, Any]:
         """Update policies row by SMALLINT id; return updated row (PATCH semantics)."""
         return self._update_row("policies", "id", policy_id, fields, _POLICY_COL_MAP, schema=schema)
 
-    def update_action(self, action_id: str, fields: dict[str, Any], *, schema: str) -> dict[str, Any]:
+    def update_action(
+        self, action_id: str, fields: dict[str, Any], *, schema: str
+    ) -> dict[str, Any]:
         """Update actions row by UUID id; return updated row (PATCH semantics).
 
         configuration is JSONB — serialise str value to JSON before binding.
@@ -285,9 +293,13 @@ class Database:
                     raise InvalidInputError(f"configuration is not valid JSON: {val!r}") from exc
         return self._update_row("actions", "id", action_id, fields, _ACTION_COL_MAP, schema=schema)
 
-    def update_service(self, service_id: int, fields: dict[str, Any], *, schema: str) -> dict[str, Any]:
+    def update_service(
+        self, service_id: int, fields: dict[str, Any], *, schema: str
+    ) -> dict[str, Any]:
         """Update services row by SMALLINT id; return updated row (PATCH semantics)."""
-        return self._update_row("services", "id", service_id, fields, _SERVICE_COL_MAP, schema=schema)
+        return self._update_row(
+            "services", "id", service_id, fields, _SERVICE_COL_MAP, schema=schema
+        )
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -340,9 +352,7 @@ class Database:
                 row = cur.fetchone()
                 conn.commit()
         except psycopg.Error as exc:
-            logger.exception(
-                "db.update_row_failed", extra={"table": table, "pk_val": str(pk_val)}
-            )
+            logger.exception("db.update_row_failed", extra={"table": table, "pk_val": str(pk_val)})
             raise DatabaseError(f"update {table} failed") from exc
 
         if not row:

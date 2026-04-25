@@ -58,13 +58,13 @@ class UserResponse(BaseResponse):
     updatedAt mirrors createdAt until an updated_at column is added (v2 TODO).
     """
 
-    id: str           # BIGINT → GraphQL ID
+    id: str  # BIGINT → GraphQL ID
     email: str
     name: str
-    role: str         # Cognito custom:role (ADMIN | OPERATOR)
-    isActive: bool    # DB enabled
-    createdAt: str    # DB created_at (ISO-8601 string)
-    updatedAt: str    # mirrors createdAt — no updated_at column in v1
+    role: str  # Cognito custom:role (ADMIN | OPERATOR)
+    isActive: bool  # DB enabled
+    createdAt: str  # DB created_at (ISO-8601 string)
+    updatedAt: str  # mirrors createdAt — no updated_at column in v1
 
     @classmethod
     def from_row(cls, row: dict[str, Any], cognito_attrs: dict[str, str]) -> UserResponse:

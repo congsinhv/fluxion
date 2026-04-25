@@ -100,6 +100,7 @@ def permission_required(permission: str) -> Callable[[F], F]:
     Raises:
         ForbiddenError: User does not hold the permission for the tenant.
     """
+
     def decorator(fn: F) -> F:
         @functools.wraps(fn)
         def wrapper(
@@ -132,6 +133,7 @@ def permission_required(permission: str) -> Callable[[F], F]:
 # ------------------------------------------------------------------
 # Internal helpers
 # ------------------------------------------------------------------
+
 
 def _resolve_user_id(db: Database, cognito_sub: str) -> int:
     """Fetch accesscontrol.users.id for a cognito_sub.

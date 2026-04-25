@@ -31,6 +31,7 @@ from schema_types import (
 # Field handlers
 # ---------------------------------------------------------------------------
 
+
 @permission_required(PERM_USER_SELF)
 def get_current_user(args: dict[str, Any], ctx: Context, _cid: str) -> dict[str, Any]:
     with Database() as db:

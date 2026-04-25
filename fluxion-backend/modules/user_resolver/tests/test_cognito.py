@@ -38,6 +38,7 @@ def _make_client(
 # admin_create_user
 # ---------------------------------------------------------------------------
 
+
 class TestAdminCreateUser:
     def test_returns_sub(self) -> None:
         import cognito
@@ -51,8 +52,10 @@ class TestAdminCreateUser:
             }
         }
         client = _make_client(create_resp=mock_resp)
-        with patch("cognito._get_client", return_value=client), \
-             patch("cognito.COGNITO_USER_POOL_ID", "us-east-1_test"):
+        with (
+            patch("cognito._get_client", return_value=client),
+            patch("cognito.COGNITO_USER_POOL_ID", "us-east-1_test"),
+        ):
             sub = cognito.admin_create_user("x@example.com", "TempPass1!")
         assert sub == "abc-123"
         client.admin_create_user.assert_called_once()
@@ -63,8 +66,10 @@ class TestAdminCreateUser:
 
         client = MagicMock()
         client.admin_create_user.side_effect = _client_error("UsernameExistsException")
-        with patch("cognito._get_client", return_value=client), \
-             patch("cognito.COGNITO_USER_POOL_ID", "pool"):
+        with (
+            patch("cognito._get_client", return_value=client),
+            patch("cognito.COGNITO_USER_POOL_ID", "pool"),
+        ):
             with pytest.raises(CognitoError):
                 cognito.admin_create_user("dup@example.com", "Pass1!")
 
@@ -74,8 +79,10 @@ class TestAdminCreateUser:
 
         mock_resp = {"User": {"Attributes": [{"Name": "email", "Value": "x@example.com"}]}}
         client = _make_client(create_resp=mock_resp)
-        with patch("cognito._get_client", return_value=client), \
-             patch("cognito.COGNITO_USER_POOL_ID", "pool"):
+        with (
+            patch("cognito._get_client", return_value=client),
+            patch("cognito.COGNITO_USER_POOL_ID", "pool"),
+        ):
             with pytest.raises(CognitoError, match="sub attribute missing"):
                 cognito.admin_create_user("x@example.com", "Pass1!")
 
@@ -84,13 +91,16 @@ class TestAdminCreateUser:
 # admin_delete_user
 # ---------------------------------------------------------------------------
 
+
 class TestAdminDeleteUser:
     def test_happy_path(self) -> None:
         import cognito
 
         client = MagicMock()
-        with patch("cognito._get_client", return_value=client), \
-             patch("cognito.COGNITO_USER_POOL_ID", "pool"):
+        with (
+            patch("cognito._get_client", return_value=client),
+            patch("cognito.COGNITO_USER_POOL_ID", "pool"),
+        ):
             cognito.admin_delete_user("x@example.com")
         client.admin_delete_user.assert_called_once()
 
@@ -100,8 +110,10 @@ class TestAdminDeleteUser:
 
         client = MagicMock()
         client.admin_delete_user.side_effect = _client_error("UserNotFoundException")
-        with patch("cognito._get_client", return_value=client), \
-             patch("cognito.COGNITO_USER_POOL_ID", "pool"):
+        with (
+            patch("cognito._get_client", return_value=client),
+            patch("cognito.COGNITO_USER_POOL_ID", "pool"),
+        ):
             cognito.admin_delete_user("gone@example.com")  # must not raise
 
     def test_other_error_raises(self) -> None:
@@ -110,8 +122,10 @@ class TestAdminDeleteUser:
 
         client = MagicMock()
         client.admin_delete_user.side_effect = _client_error("InternalErrorException")
-        with patch("cognito._get_client", return_value=client), \
-             patch("cognito.COGNITO_USER_POOL_ID", "pool"):
+        with (
+            patch("cognito._get_client", return_value=client),
+            patch("cognito.COGNITO_USER_POOL_ID", "pool"),
+        ):
             with pytest.raises(CognitoError):
                 cognito.admin_delete_user("x@example.com")
 
@@ -119,6 +133,7 @@ class TestAdminDeleteUser:
 # ---------------------------------------------------------------------------
 # admin_get_user
 # ---------------------------------------------------------------------------
+
 
 class TestAdminGetUser:
     def test_returns_attrs_dict(self) -> None:
@@ -131,8 +146,10 @@ class TestAdminGetUser:
             ]
         }
         client = _make_client(get_resp=mock_resp)
-        with patch("cognito._get_client", return_value=client), \
-             patch("cognito.COGNITO_USER_POOL_ID", "pool"):
+        with (
+            patch("cognito._get_client", return_value=client),
+            patch("cognito.COGNITO_USER_POOL_ID", "pool"),
+        ):
             attrs = cognito.admin_get_user("x@example.com")
         assert attrs["custom:role"] == "ADMIN"
         assert attrs["sub"] == "abc-123"
@@ -143,8 +160,10 @@ class TestAdminGetUser:
 
         client = MagicMock()
         client.admin_get_user.side_effect = _client_error("UserNotFoundException")
-        with patch("cognito._get_client", return_value=client), \
-             patch("cognito.COGNITO_USER_POOL_ID", "pool"):
+        with (
+            patch("cognito._get_client", return_value=client),
+            patch("cognito.COGNITO_USER_POOL_ID", "pool"),
+        ):
             with pytest.raises(NotFoundError):
                 cognito.admin_get_user("missing@example.com")
 
@@ -154,8 +173,10 @@ class TestAdminGetUser:
 
         client = MagicMock()
         client.admin_get_user.side_effect = _client_error("TooManyRequestsException")
-        with patch("cognito._get_client", return_value=client), \
-             patch("cognito.COGNITO_USER_POOL_ID", "pool"):
+        with (
+            patch("cognito._get_client", return_value=client),
+            patch("cognito.COGNITO_USER_POOL_ID", "pool"),
+        ):
             with pytest.raises(CognitoError):
                 cognito.admin_get_user("x@example.com")
 
@@ -164,13 +185,16 @@ class TestAdminGetUser:
 # admin_update_user_attributes
 # ---------------------------------------------------------------------------
 
+
 class TestAdminUpdateUserAttributes:
     def test_happy_path(self) -> None:
         import cognito
 
         client = MagicMock()
-        with patch("cognito._get_client", return_value=client), \
-             patch("cognito.COGNITO_USER_POOL_ID", "pool"):
+        with (
+            patch("cognito._get_client", return_value=client),
+            patch("cognito.COGNITO_USER_POOL_ID", "pool"),
+        ):
             cognito.admin_update_user_attributes("x@example.com", {"custom:role": "OPERATOR"})
         client.admin_update_user_attributes.assert_called_once()
 
@@ -180,8 +204,10 @@ class TestAdminUpdateUserAttributes:
 
         client = MagicMock()
         client.admin_update_user_attributes.side_effect = _client_error("UserNotFoundException")
-        with patch("cognito._get_client", return_value=client), \
-             patch("cognito.COGNITO_USER_POOL_ID", "pool"):
+        with (
+            patch("cognito._get_client", return_value=client),
+            patch("cognito.COGNITO_USER_POOL_ID", "pool"),
+        ):
             with pytest.raises(NotFoundError):
                 cognito.admin_update_user_attributes("gone@example.com", {"custom:role": "ADMIN"})
 
@@ -191,7 +217,9 @@ class TestAdminUpdateUserAttributes:
 
         client = MagicMock()
         client.admin_update_user_attributes.side_effect = _client_error("InvalidParameterException")
-        with patch("cognito._get_client", return_value=client), \
-             patch("cognito.COGNITO_USER_POOL_ID", "pool"):
+        with (
+            patch("cognito._get_client", return_value=client),
+            patch("cognito.COGNITO_USER_POOL_ID", "pool"),
+        ):
             with pytest.raises(CognitoError):
                 cognito.admin_update_user_attributes("x@example.com", {"bad": "val"})

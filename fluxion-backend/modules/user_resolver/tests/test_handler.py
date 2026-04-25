@@ -43,6 +43,7 @@ COGNITO_ATTRS_2 = {"sub": "sub-bob", "custom:role": "OPERATOR"}
 # Mock helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_conn(fetchone_seq: list[Any], fetchall_val: list[Any] | None = None) -> MagicMock:
     """Return a mock psycopg connection whose cursor.fetchone cycles through fetchone_seq."""
     cur = MagicMock()
@@ -81,6 +82,7 @@ class FakeLambdaContext:
 # conn#2+ = handler-specific
 # ---------------------------------------------------------------------------
 
+
 def _auth_connections(perm_row: Any, *handler_conns: MagicMock) -> list[MagicMock]:
     """Return ordered list of mock connections for a typical handler call.
 
@@ -88,9 +90,7 @@ def _auth_connections(perm_row: Any, *handler_conns: MagicMock) -> list[MagicMoc
     conn#1: permission check   — fetchone returns perm_row (truthy = allowed)
     conn#2+: handler-specific connections
     """
-    conn0 = _make_conn(
-        fetchone_seq=[{"schema_name": "dev1"}, {"id": 1}]
-    )
+    conn0 = _make_conn(fetchone_seq=[{"schema_name": "dev1"}, {"id": 1}])
     conn1 = _make_conn(fetchone_seq=[perm_row])
     return [conn0, conn1, *handler_conns]
 
@@ -98,6 +98,7 @@ def _auth_connections(perm_row: Any, *handler_conns: MagicMock) -> list[MagicMoc
 # ---------------------------------------------------------------------------
 # getCurrentUser
 # ---------------------------------------------------------------------------
+
 
 class TestGetCurrentUser:
     def test_happy_path(self) -> None:
@@ -109,8 +110,10 @@ class TestGetCurrentUser:
 
         event = _make_event("getCurrentUser", {})
 
-        with patch("psycopg.connect", side_effect=conns), \
-             patch("cognito.admin_get_user", return_value=COGNITO_ATTRS):
+        with (
+            patch("psycopg.connect", side_effect=conns),
+            patch("cognito.admin_get_user", return_value=COGNITO_ATTRS),
+        ):
             result = lambda_handler(event, FakeLambdaContext())
 
         assert result["email"] == "alice@example.com"
@@ -134,6 +137,7 @@ class TestGetCurrentUser:
 # getUser
 # ---------------------------------------------------------------------------
 
+
 class TestGetUser:
     def test_happy_path(self) -> None:
         """getUser(id) returns UserResponse."""
@@ -144,8 +148,10 @@ class TestGetUser:
 
         event = _make_event("getUser", {"id": "1"})
 
-        with patch("psycopg.connect", side_effect=conns), \
-             patch("cognito.admin_get_user", return_value=COGNITO_ATTRS):
+        with (
+            patch("psycopg.connect", side_effect=conns),
+            patch("cognito.admin_get_user", return_value=COGNITO_ATTRS),
+        ):
             result = lambda_handler(event, FakeLambdaContext())
 
         assert result["email"] == "alice@example.com"
@@ -167,6 +173,7 @@ class TestGetUser:
 # ---------------------------------------------------------------------------
 # listUsers
 # ---------------------------------------------------------------------------
+
 
 class TestListUsers:
     def test_non_admin_forbidden(self) -> None:
@@ -192,8 +199,10 @@ class TestListUsers:
 
         event = _make_event("listUsers", {"limit": 2})
 
-        with patch("psycopg.connect", side_effect=conns), \
-             patch("cognito.admin_get_user", side_effect=[COGNITO_ATTRS, COGNITO_ATTRS_2]):
+        with (
+            patch("psycopg.connect", side_effect=conns),
+            patch("cognito.admin_get_user", side_effect=[COGNITO_ATTRS, COGNITO_ATTRS_2]),
+        ):
             result = lambda_handler(event, FakeLambdaContext())
 
         assert "items" in result
@@ -210,8 +219,10 @@ class TestListUsers:
 
         event = _make_event("listUsers", {"limit": 20})
 
-        with patch("psycopg.connect", side_effect=conns), \
-             patch("cognito.admin_get_user", return_value=COGNITO_ATTRS):
+        with (
+            patch("psycopg.connect", side_effect=conns),
+            patch("cognito.admin_get_user", return_value=COGNITO_ATTRS),
+        ):
             result = lambda_handler(event, FakeLambdaContext())
 
         assert result["nextToken"] is None
@@ -220,6 +231,7 @@ class TestListUsers:
 # ---------------------------------------------------------------------------
 # createUser
 # ---------------------------------------------------------------------------
+
 
 class TestCreateUser:
     def test_happy_path(self) -> None:
@@ -232,13 +244,16 @@ class TestCreateUser:
         conn_set_and_get = _make_conn(fetchone_seq=[{"id": 7}, USER_ROW])
         conns = _auth_connections({"1": 1}, conn_placeholder, conn_set_and_get)
 
-        event = _make_event("createUser", {
-            "input": {"email": "alice@example.com", "name": "Alice", "role": "ADMIN"}
-        })
+        event = _make_event(
+            "createUser",
+            {"input": {"email": "alice@example.com", "name": "Alice", "role": "ADMIN"}},
+        )
 
-        with patch("psycopg.connect", side_effect=conns), \
-             patch("cognito.admin_create_user", return_value="sub-alice"), \
-             patch("cognito.admin_update_user_attributes"):
+        with (
+            patch("psycopg.connect", side_effect=conns),
+            patch("cognito.admin_create_user", return_value="sub-alice"),
+            patch("cognito.admin_update_user_attributes"),
+        ):
             result = lambda_handler(event, FakeLambdaContext())
 
         assert result["email"] == "alice@example.com"
@@ -250,9 +265,9 @@ class TestCreateUser:
         from handler import lambda_handler
 
         conns = _auth_connections(None)
-        event = _make_event("createUser", {
-            "input": {"email": "x@example.com", "name": "X", "role": "OPERATOR"}
-        })
+        event = _make_event(
+            "createUser", {"input": {"email": "x@example.com", "name": "X", "role": "OPERATOR"}}
+        )
 
         with patch("psycopg.connect", side_effect=conns):
             result = lambda_handler(event, FakeLambdaContext())
@@ -263,6 +278,7 @@ class TestCreateUser:
 # ---------------------------------------------------------------------------
 # updateUser patch semantics
 # ---------------------------------------------------------------------------
+
 
 class TestUpdateUser:
     def test_patch_semantics_name_only(self) -> None:
@@ -275,8 +291,10 @@ class TestUpdateUser:
 
         event = _make_event("updateUser", {"id": "1", "input": {"name": "Alice Updated"}})
 
-        with patch("psycopg.connect", side_effect=conns), \
-             patch("cognito.admin_get_user", return_value=COGNITO_ATTRS):
+        with (
+            patch("psycopg.connect", side_effect=conns),
+            patch("cognito.admin_get_user", return_value=COGNITO_ATTRS),
+        ):
             result = lambda_handler(event, FakeLambdaContext())
 
         assert result["name"] == "Alice Updated"
@@ -310,6 +328,7 @@ class TestUpdateUser:
 # ---------------------------------------------------------------------------
 # Unknown field
 # ---------------------------------------------------------------------------
+
 
 class TestUnknownField:
     def test_unknown_field_returns_error(self) -> None:

@@ -103,6 +103,7 @@ def permission_required(permission: str) -> Callable[[F], F]:
     Raises:
         ForbiddenError: User does not hold the permission for the tenant.
     """
+
     def decorator(fn: F) -> F:
         @functools.wraps(fn)
         def wrapper(
@@ -133,6 +134,7 @@ def permission_required(permission: str) -> Callable[[F], F]:
 # ------------------------------------------------------------------
 # Internal helpers
 # ------------------------------------------------------------------
+
 
 def validate_input(model: type[M], key: str | None = None) -> Callable[[F], F]:  # noqa: UP047
     """Decorator: validate an input dict against a Pydantic model.
@@ -188,9 +190,7 @@ def validate_patch(  # noqa: UP047
                 raise InvalidInputError(str(exc)) from exc
             patch = inp.model_dump(exclude_unset=True)
             if not patch:
-                raise InvalidInputError(
-                    f"{error_prefix}: at least one field must be provided"
-                )
+                raise InvalidInputError(f"{error_prefix}: at least one field must be provided")
             return fn(args, ctx, correlation_id, patch)
 
         return wrapper  # type: ignore[return-value]

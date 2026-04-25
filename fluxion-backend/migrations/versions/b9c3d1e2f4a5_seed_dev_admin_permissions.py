@@ -93,7 +93,7 @@ def downgrade() -> None:
         ).bindparams(email=_DEV_ADMIN_EMAIL)
     )
     conn.execute(
-        sa.text(
-            "DELETE FROM accesscontrol.users WHERE email = :email"
-        ).bindparams(email=_DEV_ADMIN_EMAIL)
+        sa.text("DELETE FROM accesscontrol.users WHERE email = :email").bindparams(
+            email=_DEV_ADMIN_EMAIL
+        )
     )

@@ -62,6 +62,7 @@ class FakeLambdaContext:
 # Standard auth connections (conn#0 + conn#1) shared by all tests
 # ---------------------------------------------------------------------------
 
+
 def _auth_conns() -> tuple[MagicMock, MagicMock]:
     conn0 = _make_conn(fetchone_seq=[{"schema_name": "dev1"}, {"id": 99}])
     conn1 = _make_conn(fetchone_seq=[{"1": 1}])  # permission granted
@@ -75,22 +76,26 @@ class TestCreateUserRollback:
         from handler import lambda_handler
 
         conn0, conn1 = _auth_conns()
-        conn2 = _make_conn(fetchone_seq=[{"id": 7}])   # create_user_placeholder
-        conn3 = _make_conn(fetchone_seq=[])             # delete_user (no RETURNING)
+        conn2 = _make_conn(fetchone_seq=[{"id": 7}])  # create_user_placeholder
+        conn3 = _make_conn(fetchone_seq=[])  # delete_user (no RETURNING)
         conns = [conn0, conn1, conn2, conn3]
 
-        event = _make_event({
-            "input": {"email": "new@example.com", "name": "New User", "role": "OPERATOR"},
-        })
+        event = _make_event(
+            {
+                "input": {"email": "new@example.com", "name": "New User", "role": "OPERATOR"},
+            }
+        )
 
         delete_called: list[int] = []
 
         def patched_delete_user(self_db: Any, user_id: int) -> None:  # noqa: ANN001
             delete_called.append(user_id)
 
-        with patch("psycopg.connect", side_effect=conns), \
-             patch("cognito.admin_create_user", side_effect=CognitoError("pool error")), \
-             patch("db.Database.delete_user", patched_delete_user):
+        with (
+            patch("psycopg.connect", side_effect=conns),
+            patch("cognito.admin_create_user", side_effect=CognitoError("pool error")),
+            patch("db.Database.delete_user", patched_delete_user),
+        ):
             result = lambda_handler(event, FakeLambdaContext())
 
         assert result["errorType"] == "COGNITO_ERROR"
@@ -106,19 +111,23 @@ class TestCreateUserRollback:
         conn3 = _make_conn(fetchone_seq=[])
         conns = [conn0, conn1, conn2, conn3]
 
-        event = _make_event({
-            "input": {"email": "new@example.com", "name": "New User", "role": "OPERATOR"},
-        })
+        event = _make_event(
+            {
+                "input": {"email": "new@example.com", "name": "New User", "role": "OPERATOR"},
+            }
+        )
 
         set_sub_called: list[Any] = []
 
         def patched_set_sub(self_db: Any, user_id: int, sub: str) -> None:  # noqa: ANN001
             set_sub_called.append((user_id, sub))
 
-        with patch("psycopg.connect", side_effect=conns), \
-             patch("cognito.admin_create_user", side_effect=CognitoError("create failed")), \
-             patch("db.Database.delete_user"), \
-             patch("db.Database.set_user_cognito_sub", patched_set_sub):
+        with (
+            patch("psycopg.connect", side_effect=conns),
+            patch("cognito.admin_create_user", side_effect=CognitoError("create failed")),
+            patch("db.Database.delete_user"),
+            patch("db.Database.set_user_cognito_sub", patched_set_sub),
+        ):
             lambda_handler(event, FakeLambdaContext())
 
         assert set_sub_called == [], "set_user_cognito_sub must NOT be called after rollback"
@@ -128,23 +137,29 @@ class TestCreateUserRollback:
         from handler import lambda_handler
 
         conn0, conn1 = _auth_conns()
-        conn2 = _make_conn(fetchone_seq=[{"id": 7}])             # create_user_placeholder
-        conn3 = _make_conn(fetchone_seq=[{"id": 7}, USER_ROW])   # set_user_cognito_sub + get_user_by_id
+        conn2 = _make_conn(fetchone_seq=[{"id": 7}])  # create_user_placeholder
+        conn3 = _make_conn(
+            fetchone_seq=[{"id": 7}, USER_ROW]
+        )  # set_user_cognito_sub + get_user_by_id
         conns = [conn0, conn1, conn2, conn3]
 
-        event = _make_event({
-            "input": {"email": "new@example.com", "name": "New User", "role": "OPERATOR"},
-        })
+        event = _make_event(
+            {
+                "input": {"email": "new@example.com", "name": "New User", "role": "OPERATOR"},
+            }
+        )
 
         delete_called: list[Any] = []
 
         def patched_delete(self_db: Any, uid: int) -> None:  # noqa: ANN001
             delete_called.append(uid)
 
-        with patch("psycopg.connect", side_effect=conns), \
-             patch("cognito.admin_create_user", return_value="sub-new"), \
-             patch("cognito.admin_update_user_attributes"), \
-             patch("db.Database.delete_user", patched_delete):
+        with (
+            patch("psycopg.connect", side_effect=conns),
+            patch("cognito.admin_create_user", return_value="sub-new"),
+            patch("cognito.admin_update_user_attributes"),
+            patch("db.Database.delete_user", patched_delete),
+        ):
             result = lambda_handler(event, FakeLambdaContext())
 
         assert "errorType" not in result, f"unexpected error: {result}"
@@ -157,24 +172,30 @@ class TestCreateUserRollback:
         from handler import lambda_handler
 
         conn0, conn1 = _auth_conns()
-        conn2 = _make_conn(fetchone_seq=[{"id": 7}])   # create_user_placeholder
-        conn3 = _make_conn(fetchone_seq=[])             # delete_user rollback
+        conn2 = _make_conn(fetchone_seq=[{"id": 7}])  # create_user_placeholder
+        conn3 = _make_conn(fetchone_seq=[])  # delete_user rollback
         conns = [conn0, conn1, conn2, conn3]
 
-        event = _make_event({
-            "input": {"email": "new@example.com", "name": "New User", "role": "ADMIN"},
-        })
+        event = _make_event(
+            {
+                "input": {"email": "new@example.com", "name": "New User", "role": "ADMIN"},
+            }
+        )
 
         delete_called: list[int] = []
 
         def patched_delete(self_db: Any, uid: int) -> None:  # noqa: ANN001
             delete_called.append(uid)
 
-        with patch("psycopg.connect", side_effect=conns), \
-             patch("cognito.admin_create_user", return_value="sub-new"), \
-             patch("cognito.admin_update_user_attributes",
-                   side_effect=CognitoError("attr update failed")), \
-             patch("db.Database.delete_user", patched_delete):
+        with (
+            patch("psycopg.connect", side_effect=conns),
+            patch("cognito.admin_create_user", return_value="sub-new"),
+            patch(
+                "cognito.admin_update_user_attributes",
+                side_effect=CognitoError("attr update failed"),
+            ),
+            patch("db.Database.delete_user", patched_delete),
+        ):
             result = lambda_handler(event, FakeLambdaContext())
 
         assert result["errorType"] == "COGNITO_ERROR"
