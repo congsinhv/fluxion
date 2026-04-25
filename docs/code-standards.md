@@ -141,6 +141,8 @@ print(f"device {d.id} enrolled for customer {customer.full_name}")  # PII leak +
 **Target runtime:** Python 3.12 on AWS Lambda (container image).
 **Formatter/Linter:** [Ruff](https://docs.astral.sh/ruff/) — single tool replacing Black + isort + flake8 + pylint (≈20× faster, 2026 ecosystem standard). Commands: `ruff format` + `ruff check --select ALL` (justified `# noqa: <RULE>` with reason).
 **Type checker:** `mypy --strict`.
+**Database driver:** `psycopg[binary]` (psycopg3) replacing psycopg2-binary. Synchronous, native Python objects, no SQLAlchemy ORM.
+**Validation:** Pydantic v2 (ConfigDict, BaseModel, Field, model_validate).
 
 ### 3.1 Type Hints
 
@@ -196,27 +198,73 @@ def enroll_device(tenant_id: str, serial: str) -> Device:
 - At handler boundary, map to AppSync error response with stable error codes.
 - Never raise `Exception` directly; always a specific subclass.
 
-### 3.4 Pydantic at Boundaries
+### 3.4 Pydantic v2 at Boundaries
 
-- **Every handler entry** parses `event["arguments"]` into a Pydantic model.
-- **Every repository return** is a Pydantic DTO, not a raw cursor row.
-- **Every external API response** parsed through Pydantic before use.
-- Use `model_config = ConfigDict(extra="forbid")` — reject unknown fields.
+- **Every handler entry** parses `event["arguments"]` into a Pydantic model (v2 syntax: `model_validate`).
+- **Every repository return** is a Pydantic DTO, not a raw dict/cursor row.
+- **Every external API response** (Cognito, SSM, etc.) parsed through Pydantic before use.
+- **Input models:** `BaseInput` with `ConfigDict(extra="forbid", frozen=True)` — reject unknown fields, immutable.
+- **Output models:** `BaseResponse` with `ConfigDict(extra="allow")` — forward-compatible (new server fields don't break old clients).
 
 **Do:**
 
 ```python
-class EnrollDeviceInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+from pydantic import BaseModel, ConfigDict, Field
+
+class BaseInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+class EnrollDeviceInput(BaseInput):
     serial: str
     platform: Platform
 
+class DeviceResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    id: str
+    createdAt: str
+    information: DeviceInformationResponse | None = None
+
 def handler(event, context):
     args = EnrollDeviceInput.model_validate(event["arguments"])
-    ...
+    result = db.enroll(args.serial, args.platform)
+    return DeviceResponse.model_validate(result).model_dump()
 ```
 
-### 3.5 Imports
+### 3.5 psycopg3 & Database Context
+
+- **Connection management:** Always use context manager (`with Database(...) as db:`) to ensure connections close.
+- **Row factory:** Set `row_factory=psycopg.rows.dict_row` so cursor rows are dicts, not tuples.
+- **Schema validation:** Regex-validate tenant schema names **before** f-string interpolation. `Database._validate_schema()` enforces `^[a-z][a-z0-9_]{0,39}$`.
+- **Schema interpolation:** Use `psycopg.sql.Identifier` for schema names in queries; **never** f-string user-supplied schema names without validation.
+- **Parameterized queries:** Always use `%s` placeholders + tuple args, never f-string values into SQL.
+- **No SQLAlchemy ORM:** Lambdas use raw SQL + dict rows + Pydantic models. Simpler, faster, fewer dependencies.
+
+**Do:**
+
+```python
+from psycopg import rows
+
+with Database(dsn=DATABASE_URI, tenant_schema=ctx.tenant_schema) as db:
+    conn = db._require_conn()  # type: psycopg.Connection[Any]
+    with conn.cursor(row_factory=rows.dict_row) as cur:
+        cur.execute(
+            f"SELECT * FROM {ctx.tenant_schema}.devices WHERE id = %s",
+            (device_id,),
+        )
+        row = cur.fetchone()
+```
+
+**Don't:**
+
+```python
+# SQL injection risk if serial is user-supplied
+cur.execute(f"SELECT * FROM {ctx.tenant_schema}.devices WHERE serial = '{serial}'")
+
+# Wrong: psycopg2-style placeholder (%, not %s)
+cur.execute("SELECT * FROM devices WHERE serial = %s", (serial,))
+```
+
+### 3.6 Imports
 
 - **Absolute imports only, no `src.` prefix** — `from config import logger`, not `from src.config import logger` and not relative `from .config import ...`.
   - Rationale: Lambda runtime copies `src/` contents flat into `LAMBDA_TASK_ROOT`. Tests mirror this via `pyproject.toml` → `[tool.pytest.ini_options] pythonpath = ["src"]`. Handlers import the same way in both contexts.
@@ -224,13 +272,42 @@ def handler(event, context):
 - **No wildcard imports** (`from x import *`).
 - **No circular deps** — enforce via `import-linter` when tooling ticket lands.
 
-### 3.6 Async
+### 3.7 Handler Dispatch Pattern
+
+GraphQL resolver Lambdas use a dispatch table to route fields to handlers:
+
+```python
+FieldHandler = Callable[[dict[str, Any], Context, str], Any]
+
+FIELD_HANDLERS: dict[str, FieldHandler] = {
+    "getDevice": get_device,
+    "listDevices": list_devices,
+    "getDeviceHistory": get_device_history,
+}
+
+def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
+    """AppSync Lambda direct resolver entry point."""
+    field: str = event.get("info", {}).get("fieldName", "")
+    handler = FIELD_HANDLERS.get(field)
+    if handler is None:
+        raise UnknownFieldError(f"no handler for field: {field!r}")
+    return handler(event.get("arguments", {}), event, correlation_id)
+```
+
+**Rules:**
+- One handler function per GraphQL field (e.g., `get_device` for `getDevice`).
+- Each handler signature: `(args: dict[str, Any], event: dict[str, Any], correlation_id: str) -> Any`.
+- Decorator `@permission_required("permission:code")` wraps handler to build Context and enforce auth.
+- Handler receives Context as second positional arg (injected by decorator): `def get_device(args, ctx, _cid)`.
+- Must return dict (Pydantic `model_dump()`) or raise FluxionError → AppSync error.
+
+### 3.8 Async
 
 - Prefer `aioboto3` for I/O-bound Lambda (SNS publish, S3 get).
 - Don't mix sync/async in one handler — pick one.
 - Use `asyncio.gather` with `return_exceptions=True` for fan-out, inspect results.
 
-### 3.7 Strict Target
+### 3.9 Strict Target
 
 | Tool | Command | Must Pass |
 |------|---------|-----------|
@@ -238,6 +315,7 @@ def handler(event, context):
 | Linter | `ruff check --select ALL .` | Yes (w/ justified `noqa`) |
 | Type checker | `mypy --strict src/` | Yes |
 | Security | `bandit -r src/` | No high-severity findings |
+| Tests | `pytest --cov=src --cov-fail-under=80` | Yes (80% coverage) |
 
 ---
 

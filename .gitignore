@@ -35,6 +35,8 @@ coverage/
 *.tfstate.*
 *.tfvars
 !terraform.tfvars.example
+tfplan
+*.tfplan
 
 # Secrets / env
 .env

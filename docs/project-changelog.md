@@ -8,8 +8,16 @@
 
 ## [Unreleased]
 
-### Added
-- AppSync GraphQL API infrastructure (T7 #33): Terraform module + schema + Cognito+IAM auth + dev env wiring + SSM param exports
+### In Progress
+- **Phase 4 (T7 #34) — Lambda Resolvers (IN PROGRESS, code on feature/34-lambda-resolvers):**
+  - P0 (Template migration): psycopg3 + Pydantic v2 + auth skeleton complete, Alembic seed migration for 6 permission codes
+  - P1 (Terraform lambda_function module): 5 files complete, validated
+  - P2 (device_resolver): 3 fields, ≥80% coverage, tests green
+  - P3 (platform_resolver): 8 fields (4 queries + 4 mutations), 87.17% coverage, 49 tests passing
+  - P4 (user_resolver): 5 fields, Cognito transaction coordination tested, rollback proven
+  - P5 (E2E smoke): Scripts + Alembic seed migration written, deployment docs updated, live run deferred to post-merge
+  - **Blockers:** PR #79 merge coordination; live `terraform apply` + AWS CLI smoke run awaits merge
+  - **DONE_WITH_CONCERNS:** Design & implementation complete; deployment testing deferred (no functional impact pre-merge)
 
 ---
 
@@ -325,6 +333,7 @@ See [CLAUDE.md](../CLAUDE.md) for details.
 
 | Version | Date | Change |
 |---------|------|--------|
+| v1.3 | 2026-04-22 | Added #34 T4: E2E smoke (provision-dev-admin.sh, smoke-appsync.sh), Alembic dev admin seed migration, auth module ADMIN_USER_PASSWORD_AUTH flow, deployment-guide.md. Closes T7 deferred T4. |
 | v1.2 | 2026-04-21 | Added T7 (#33): AppSync GraphQL API infrastructure with Cognito+IAM auth, schema, dev env wiring, SSM exports. |
 | v1.1 | 2026-04-20 | Added Phase 3b (T6 #32) entry: Cognito auth module + CI/CD deploy pipeline (code merged, infrastructure partial apply). |
 | v1.0 | 2026-04-20 | Initial changelog with Phases 1–3 entries; Phase 3 (T6 #31) marked complete. |

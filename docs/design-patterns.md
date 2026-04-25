@@ -142,41 +142,47 @@ def apply_action(conn, tenant_schema: str, device_id: str, action: str) -> Devic
 **Solution — thin handler + delegation.** The `handler.py` is a wire: it does the 4 boundary concerns (parse, auth, validate, serialize) and delegates work to sibling modules.
 
 ```python
-# modules/device_resolver/handler.py (~40 LOC, under §2.2 budget)
+# modules/device_resolver/handler.py (~50 LOC, under §2.2 budget)
 from __future__ import annotations
-import os, logging
-from shared_logging import configure  # copied per-Lambda, not imported from a shared/ dir
+import logging
+from typing import Any, Callable
 
-configure()
-logger = logging.getLogger(__name__)
+from config import POWERTOOLS_SERVICE_NAME
+from exceptions import FluxionError, UnknownFieldError
 
-FIELD_HANDLERS = {
+logger = logging.getLogger(POWERTOOLS_SERVICE_NAME)
+
+FieldHandler = Callable[[dict[str, Any], Any, str], Any]
+
+FIELD_HANDLERS: dict[str, FieldHandler] = {
     "getDevice": handle_get_device,
     "listDevices": handle_list_devices,
     "enrollDevice": handle_enroll_device,
 }
 
-def lambda_handler(event, context):
-    field = event["info"]["fieldName"]
-    tenant_ctx = tenant_context_from(event)  # parses Cognito claims
-    correlation_id = context.aws_request_id
-
-    logger.info("resolver.invoked", extra={"field": field, "tenant": tenant_ctx.id, "correlation_id": correlation_id})
+def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
+    correlation_id: str = getattr(context, "aws_request_id", "local")
+    field: str = event.get("info", {}).get("fieldName", "")
+    logger.info("resolver.invoked", extra={"field": field, "correlation_id": correlation_id})
     try:
-        return FIELD_HANDLERS[field](event["arguments"], tenant_ctx, correlation_id)
-    except FluxionError as e:
-        return e.to_appsync_error()
+        handler = FIELD_HANDLERS.get(field)
+        if handler is None:
+            raise UnknownFieldError(f"no handler for field: {field!r}")
+        return handler(event.get("arguments", {}), event, correlation_id)
+    except FluxionError as exc:
+        return exc.to_appsync_error()
 ```
 
 **Field-level authorization via decorators.** Decorators live in the Lambda (copied, not imported):
 
 ```python
-@require_role("admin")
-@tenant_scoped
-def handle_enroll_device(args, ctx, correlation_id):
+# auth.py — permission_required decorator (psycopg3 + Pydantic v2)
+@permission_required("device:admin")
+def handle_enroll_device(args: dict[str, Any], ctx: Context, correlation_id: str) -> dict[str, Any]:
     input_ = EnrollDeviceInput.model_validate(args)
-    device = db.enroll(ctx.tenant_id, input_.serial, input_.platform)
-    return Device.from_row(device).model_dump()
+    with Database(dsn=DATABASE_URI, tenant_schema=ctx.tenant_schema) as db:
+        device = db.enroll(input_.serial, input_.platform)
+    return DeviceOutput.model_validate(device).model_dump()
 ```
 
 **Config in `config.py` (mandatory).** Every Lambda reads its environment variables exactly once, at module import, in `config.py`. Failures are loud at cold start, not buried inside request handlers.
@@ -210,37 +216,48 @@ Handlers and services import from `config.py`. They never call `os.environ` dire
 **Solution — `db.py` per Lambda.** All data access lives in a single module per Lambda with a clear API. Business logic gets Pydantic DTOs, never raw `dict` rows.
 
 ```python
-# modules/device_resolver/db.py
+# modules/device_resolver/db.py  (psycopg3 — no SQLAlchemy)
+import psycopg
+import psycopg.sql
+from db import Database  # copied from _template/src/db.py
+
 class DeviceRepository:
-    def __init__(self, conn: psycopg2.extensions.connection, tenant_schema: str) -> None:
+    def __init__(self, db: Database, tenant_schema: str) -> None:
         # tenant_schema comes from validated Cognito context (see §3 schema-name safety note)
-        self._conn = conn
-        self._schema = tenant_schema
+        # psycopg.sql.Identifier prevents SQL injection on schema name.
+        self._db = db
+        self._schema = psycopg.sql.Identifier(tenant_schema)
 
     def get_by_id(self, device_id: str) -> Device | None:
-        with self._conn.cursor() as cur:
+        conn = self._db._require_conn()
+        with conn.cursor() as cur:
             cur.execute(
-                f"SELECT * FROM {self._schema}.devices WHERE id = %s",
+                psycopg.sql.SQL("SELECT * FROM {schema}.devices WHERE id = %s").format(
+                    schema=self._schema
+                ),
                 (device_id,),
             )
             row = cur.fetchone()
-        return Device.model_validate(dict(row)) if row else None
+        return Device.model_validate(row) if row else None
 
     def enroll(self, serial: str, platform: Platform) -> Device:
-        with self._conn.cursor() as cur:
+        conn = self._db._require_conn()
+        with conn.cursor() as cur:
             cur.execute(
-                f"""
-                INSERT INTO {self._schema}.devices (serial, platform, state)
-                VALUES (%s, %s, 'registered')
-                ON CONFLICT (serial) DO NOTHING
-                RETURNING *;
-                """,
+                psycopg.sql.SQL(
+                    """
+                    INSERT INTO {schema}.devices (serial, platform, state)
+                    VALUES (%s, %s, 'registered')
+                    ON CONFLICT (serial) DO NOTHING
+                    RETURNING *;
+                    """
+                ).format(schema=self._schema),
                 (serial, platform.value),
             )
             row = cur.fetchone()
         if not row:
             raise SerialAlreadyRegistered(serial)
-        return Device.model_validate(dict(row))
+        return Device.model_validate(row)
 ```
 
 **Tenant isolation is structural.** With tenant-per-schema, isolation lives in the schema boundary — the `DeviceRepository` is bound to one tenant schema for its entire lifetime. No query has a free `WHERE tenant_id = %s` clause; cross-tenant leaks require a bug in *construction* (wrong schema passed in), not in individual queries.
@@ -470,12 +487,23 @@ Explicit beats implicit: the query read in isolation tells you which tenant it t
 ### 11.2 Schema Name Resolution
 
 The `tenant_schema` value flows:
-1. Client authenticates with Cognito — token carries `tenant_id` claim.
-2. Lambda auth decorator reads the claim, looks up `accesscontrol.tenants` to fetch `schema_name`.
-3. Resolved `tenant_schema` is passed into repositories at construction.
-4. Repositories f-string-interpolate it into SQL.
+1. Client authenticates with Cognito — token carries `sub` (cognito_sub) and `custom:tenant_id` claims.
+2. `build_context_from(event)` in `auth.py` reads both claims; looks up `accesscontrol.tenants` by tenant_id to fetch `schema_name`; looks up `accesscontrol.users` by cognito_sub to fetch `user_id`.
+3. Resolved `Context(cognito_sub, user_id, tenant_id, tenant_schema)` is passed into field handlers.
+4. Repositories receive `tenant_schema` at construction and use `psycopg.sql.Identifier(tenant_schema)` for all schema-qualified SQL — **never f-string interpolation** of schema names.
 
-**Schema name must be validated** before any f-string use: `re.fullmatch(r"^[a-z][a-z0-9_]{0,39}$", schema_name)` (bare names like `dev1`, `acme`; no prefix). Never accept `tenant_schema` from request arguments; only from the validated auth claim path.
+**Schema name validation** is defense-in-depth: `re.fullmatch(r"^[a-z][a-z0-9_]{0,39}$", schema_name)` (bare names like `dev1`, `acme`; no `tenant_` prefix). The primary safety mechanism is `psycopg.sql.Identifier` which escapes the name at the driver level. Never accept `tenant_schema` from request arguments; only from the validated auth claim path.
+
+```python
+# auth.py — context resolution (psycopg3)
+from auth import build_context_from, permission_required, Context
+from db import Database
+
+ctx: Context = build_context_from(event)
+# ctx.tenant_schema is validated bare name, e.g. "dev1"
+with Database(dsn=DATABASE_URI, tenant_schema=ctx.tenant_schema) as db:
+    allowed = db.has_permission(ctx.cognito_sub, ctx.tenant_id, "device:read")
+```
 
 ### 11.3 Migrations
 
@@ -531,5 +559,6 @@ If your problem is not in the table, solving it with a pattern is probably prema
 
 | Version | Date | Change |
 |---------|------|--------|
+| v1.2 | 2026-04-22 | §4 handler snippet updated to psycopg3 + typed dispatch table; §5 db snippet migrated from psycopg2/SQLAlchemy to psycopg3 + `psycopg.sql.Identifier`; §11.2 updated auth flow (two Cognito claims → Context) + `Identifier` as primary SQL-injection guard (#34). |
 | v1.1 | 2026-04-20 | Updated §11 (tenant-per-schema): corrected schema naming from `tenant_{slug}` to bare names (`dev1`, `acme`); changed `meta` schema ref to `accesscontrol`; clarified 16 per-tenant business tables + provisioning proc structure (#31). |
 | v1.0 | 2026-04-19 | Initial release (#61). |
