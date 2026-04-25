@@ -29,6 +29,8 @@ UserRole enum: ADMIN | OPERATOR (matches schema.graphql)
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -63,6 +65,24 @@ class UserResponse(BaseResponse):
     isActive: bool    # DB enabled
     createdAt: str    # DB created_at (ISO-8601 string)
     updatedAt: str    # mirrors createdAt — no updated_at column in v1
+
+    @classmethod
+    def from_row(cls, row: dict[str, Any], cognito_attrs: dict[str, str]) -> UserResponse:
+        """Build response from a DB row plus Cognito user attributes."""
+        created_at = str(row["created_at"])
+        return cls(
+            id=str(row["id"]),
+            email=row["email"],
+            name=row["name"] or "",
+            role=cognito_attrs.get("custom:role", "OPERATOR"),
+            isActive=bool(row["enabled"]),
+            createdAt=created_at,
+            updatedAt=created_at,  # no updated_at column in v1 (tech debt)
+        )
+
+    @classmethod
+    def dump_row(cls, row: dict[str, Any], cognito_attrs: dict[str, str]) -> dict[str, Any]:
+        return cls.from_row(row, cognito_attrs).model_dump()
 
 
 class UserConnectionResponse(BaseResponse):

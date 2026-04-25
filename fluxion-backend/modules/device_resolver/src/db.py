@@ -54,14 +54,12 @@ class Database:
     Context-manager only — do not use outside ``with Database(...) as db:``.
     """
 
-    def __init__(self, dsn: str = DATABASE_URI, tenant_schema: str = "") -> None:
-        self._dsn = dsn
-        self._tenant_schema = _validate_schema(tenant_schema) if tenant_schema else ""
+    def __init__(self) -> None:
         self._conn: psycopg.Connection[Any] | None = None
 
     def __enter__(self) -> Database:
         try:
-            self._conn = psycopg.connect(self._dsn, row_factory=psycopg.rows.dict_row)
+            self._conn = psycopg.connect(DATABASE_URI, row_factory=psycopg.rows.dict_row)
         except psycopg.Error as exc:
             logger.exception("db.connect_failed")
             raise DatabaseError("database connection failed") from exc
@@ -127,14 +125,14 @@ class Database:
     # Device queries
     # ------------------------------------------------------------------
 
-    def get_device_by_id(self, device_id: str) -> dict[str, Any]:
+    def get_device_by_id(self, device_id: str, *, schema: str) -> dict[str, Any]:
         """Fetch device + device_information by device UUID.
 
         Raises:
             NotFoundError: No device row for device_id.
             DatabaseError: Query execution failed.
         """
-        schema = psycopg.sql.Identifier(self._tenant_schema)
+        schema = psycopg.sql.Identifier(schema)
         conn = self._require_conn()
         try:
             with conn.cursor() as cur:
@@ -178,6 +176,8 @@ class Database:
         state_id: int | None = None,
         policy_id: int | None = None,
         search: str | None = None,
+        *,
+        schema: str,
     ) -> tuple[list[dict[str, Any]], str | None]:
         """Return (rows, next_token) for cursor-paginated device list.
 
@@ -187,7 +187,7 @@ class Database:
         Returns:
             Tuple of (rows, nextToken | None).
         """
-        schema = psycopg.sql.Identifier(self._tenant_schema)
+        schema = psycopg.sql.Identifier(schema)
         after_uuid = _decode_cursor(after_id) if after_id else None
         conn = self._require_conn()
 
@@ -258,6 +258,8 @@ class Database:
         device_id: str,
         limit: int,
         after_id: str | None,
+        *,
+        schema: str,
     ) -> tuple[list[dict[str, Any]], str | None]:
         """Return (milestone_rows, next_token) for cursor-paginated history.
 
@@ -267,7 +269,7 @@ class Database:
         Returns:
             Tuple of (rows, nextToken | None).
         """
-        schema = psycopg.sql.Identifier(self._tenant_schema)
+        schema = psycopg.sql.Identifier(schema)
         after_uuid = _decode_cursor(after_id) if after_id else None
         conn = self._require_conn()
 

@@ -16,16 +16,13 @@ used as the Cognito username (the pool uses email as the sign-in alias).
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 import boto3
 import botocore.exceptions
 
-from config import COGNITO_USER_POOL_ID, POWERTOOLS_SERVICE_NAME
+from config import COGNITO_USER_POOL_ID, logger
 from exceptions import CognitoError, NotFoundError
-
-logger = logging.getLogger(POWERTOOLS_SERVICE_NAME)
 
 # Module-level client; re-used across warm invocations.
 _client: Any = None

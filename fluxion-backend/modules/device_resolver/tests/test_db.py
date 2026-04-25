@@ -49,7 +49,7 @@ _MILESTONE_ROW: dict[str, Any] = {
 
 def _make_db(rows: list[dict[str, Any]]) -> tuple[Database, MagicMock]:
     """Return a Database instance with a fake psycopg connection returning `rows`."""
-    db = Database(dsn="fake://", tenant_schema=SCHEMA)
+    db = Database()
     mock_conn = MagicMock()
     mock_cur = MagicMock()
     mock_cur.__enter__ = MagicMock(return_value=mock_cur)
@@ -102,7 +102,7 @@ def test_decode_cursor_invalid_uuid() -> None:
 
 
 def test_database_requires_conn_outside_cm() -> None:
-    db = Database(dsn="fake://", tenant_schema=SCHEMA)
+    db = Database()
     with pytest.raises(DatabaseError, match="outside context manager"):
         db._require_conn()  # noqa: SLF001
 
@@ -110,7 +110,7 @@ def test_database_requires_conn_outside_cm() -> None:
 def test_database_connect_failure() -> None:
     import psycopg
 
-    db = Database(dsn="fake://", tenant_schema=SCHEMA)
+    db = Database()
     with patch("psycopg.connect", side_effect=psycopg.OperationalError("fail")):
         with pytest.raises(DatabaseError, match="connection failed"):
             db.__enter__()
@@ -176,7 +176,7 @@ def test_has_permission_db_error() -> None:
 def test_get_device_by_id_found() -> None:
     db, mock_cur = _make_db([_DEVICE_ROW])
     mock_cur.fetchone.return_value = _DEVICE_ROW
-    result = db.get_device_by_id(DEVICE_ID)
+    result = db.get_device_by_id(DEVICE_ID, schema=SCHEMA)
     assert result["id"] == DEVICE_ID
 
 
@@ -184,7 +184,7 @@ def test_get_device_by_id_not_found() -> None:
     db, mock_cur = _make_db([])
     mock_cur.fetchone.return_value = None
     with pytest.raises(NotFoundError):
-        db.get_device_by_id(DEVICE_ID)
+        db.get_device_by_id(DEVICE_ID, schema=SCHEMA)
 
 
 def test_get_device_by_id_db_error() -> None:
@@ -193,7 +193,7 @@ def test_get_device_by_id_db_error() -> None:
     db, mock_cur = _make_db([])
     mock_cur.execute.side_effect = psycopg.OperationalError("down")
     with pytest.raises(DatabaseError):
-        db.get_device_by_id(DEVICE_ID)
+        db.get_device_by_id(DEVICE_ID, schema=SCHEMA)
 
 
 # ---------------------------------------------------------------------------
@@ -204,7 +204,7 @@ def test_get_device_by_id_db_error() -> None:
 def test_list_devices_no_cursor() -> None:
     db, mock_cur = _make_db([_DEVICE_ROW])
     mock_cur.fetchall.return_value = [_DEVICE_ROW]
-    rows, next_token = db.list_devices(limit=20, after_id=None)
+    rows, next_token = db.list_devices(limit=20, after_id=None, schema=SCHEMA)
     assert len(rows) == 1
     assert next_token is None
 
@@ -216,7 +216,7 @@ def test_list_devices_next_page() -> None:
     row2 = {**_DEVICE_ROW, "id": uid2}
     db, mock_cur = _make_db([row1, row2])
     mock_cur.fetchall.return_value = [row1, row2]
-    rows, next_token = db.list_devices(limit=1, after_id=None)
+    rows, next_token = db.list_devices(limit=1, after_id=None, schema=SCHEMA)
     assert len(rows) == 1
     assert next_token == _encode_cursor(uid1)
 
@@ -225,7 +225,7 @@ def test_list_devices_with_cursor() -> None:
     db, mock_cur = _make_db([_DEVICE_ROW])
     mock_cur.fetchall.return_value = [_DEVICE_ROW]
     cursor = _encode_cursor(str(uuid.uuid4()))
-    rows, _ = db.list_devices(limit=20, after_id=cursor)
+    rows, _ = db.list_devices(limit=20, after_id=cursor, schema=SCHEMA)
     assert len(rows) == 1
 
 
@@ -235,7 +235,7 @@ def test_list_devices_db_error() -> None:
     db, mock_cur = _make_db([])
     mock_cur.execute.side_effect = psycopg.OperationalError("down")
     with pytest.raises(DatabaseError):
-        db.list_devices(limit=20, after_id=None)
+        db.list_devices(limit=20, after_id=None, schema=SCHEMA)
 
 
 # ---------------------------------------------------------------------------
@@ -246,7 +246,7 @@ def test_list_devices_db_error() -> None:
 def test_get_device_history_no_cursor() -> None:
     db, mock_cur = _make_db([_MILESTONE_ROW])
     mock_cur.fetchall.return_value = [_MILESTONE_ROW]
-    rows, next_token = db.get_device_history(DEVICE_ID, limit=20, after_id=None)
+    rows, next_token = db.get_device_history(DEVICE_ID, limit=20, after_id=None, schema=SCHEMA)
     assert len(rows) == 1
     assert next_token is None
 
@@ -257,7 +257,7 @@ def test_get_device_history_next_page() -> None:
     m2 = {**_MILESTONE_ROW, "id": uid2}
     db, mock_cur = _make_db([m1, m2])
     mock_cur.fetchall.return_value = [m1, m2]
-    rows, next_token = db.get_device_history(DEVICE_ID, limit=1, after_id=None)
+    rows, next_token = db.get_device_history(DEVICE_ID, limit=1, after_id=None, schema=SCHEMA)
     assert len(rows) == 1
     assert next_token == _encode_cursor(uid1)
 
@@ -266,7 +266,7 @@ def test_get_device_history_with_cursor() -> None:
     db, mock_cur = _make_db([_MILESTONE_ROW])
     mock_cur.fetchall.return_value = [_MILESTONE_ROW]
     cursor = _encode_cursor(str(uuid.uuid4()))
-    rows, _ = db.get_device_history(DEVICE_ID, limit=20, after_id=cursor)
+    rows, _ = db.get_device_history(DEVICE_ID, limit=20, after_id=cursor, schema=SCHEMA)
     assert len(rows) == 1
 
 
@@ -276,4 +276,4 @@ def test_get_device_history_db_error() -> None:
     db, mock_cur = _make_db([])
     mock_cur.execute.side_effect = psycopg.OperationalError("down")
     with pytest.raises(DatabaseError):
-        db.get_device_history(DEVICE_ID, limit=20, after_id=None)
+        db.get_device_history(DEVICE_ID, limit=20, after_id=None, schema=SCHEMA)

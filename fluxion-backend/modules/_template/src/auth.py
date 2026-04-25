@@ -72,7 +72,7 @@ def build_context_from(event: dict[str, Any]) -> Context:
     except (ValueError, TypeError) as exc:
         raise InvalidInputError(f"custom:tenant_id is not an integer: {raw_tenant_id!r}") from exc
 
-    with Database(dsn=DATABASE_URI) as db:
+    with Database() as db:
         tenant_schema = db.get_schema_name(tenant_id)
         user_id = _resolve_user_id(db, cognito_sub)
 
@@ -110,7 +110,7 @@ def permission_required(permission: str) -> Callable[[F], F]:
             # ``args`` = event["arguments"] (pre-extracted by handler dispatch).
             # ``event`` = full AppSync event carrying identity.claims.
             ctx = build_context_from(event)
-            with Database(dsn=DATABASE_URI, tenant_schema=ctx.tenant_schema) as db:
+            with Database() as db:
                 if not db.has_permission(ctx.cognito_sub, ctx.tenant_id, permission):
                     logger.warning(
                         "auth.permission_denied",

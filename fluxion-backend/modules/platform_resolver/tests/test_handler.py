@@ -7,13 +7,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 from exceptions import InvalidInputError, NotFoundError
-from handler import (
-    _row_to_action,
-    _row_to_policy,
-    _row_to_service,
-    _row_to_state,
-    lambda_handler,
-)
+from handler import lambda_handler
 from schema_types import ActionResponse, PolicyResponse, ServiceResponse, StateResponse
 
 # ---------------------------------------------------------------------------
@@ -60,23 +54,23 @@ def _mock_auth_allow() -> tuple[Any, Any]:
 # ---------------------------------------------------------------------------
 
 
-def test_row_to_state() -> None:
+def test_state_from_row() -> None:
     row = {"id": 1, "name": "Idle"}
-    result = _row_to_state(row)
+    result = StateResponse.from_row(row)
     assert isinstance(result, StateResponse)
     assert result.id == 1
     assert result.name == "Idle"
 
 
-def test_row_to_policy() -> None:
+def test_policy_from_row() -> None:
     row = {"id": 1, "name": "Idle", "state_id": 1, "service_type_id": 1, "color": None}
-    result = _row_to_policy(row)
+    result = PolicyResponse.from_row(row)
     assert isinstance(result, PolicyResponse)
     assert result.stateId == 1
     assert result.color is None
 
 
-def test_row_to_action_with_configuration() -> None:
+def test_action_from_row_with_configuration() -> None:
     row = {
         "id": ACTION_ID,
         "name": "Lock",
@@ -86,14 +80,14 @@ def test_row_to_action_with_configuration() -> None:
         "apply_policy_id": 5,
         "configuration": {"key": "val"},
     }
-    result = _row_to_action(row)
+    result = ActionResponse.from_row(row)
     assert isinstance(result, ActionResponse)
     assert result.id == ACTION_ID
     assert result.configuration is not None
     assert "key" in result.configuration
 
 
-def test_row_to_action_null_optional_fields() -> None:
+def test_action_from_row_null_optional_fields() -> None:
     row = {
         "id": ACTION_ID,
         "name": "Upload",
@@ -103,15 +97,15 @@ def test_row_to_action_null_optional_fields() -> None:
         "apply_policy_id": 1,
         "configuration": None,
     }
-    result = _row_to_action(row)
+    result = ActionResponse.from_row(row)
     assert result.fromStateId is None
     assert result.serviceTypeId is None
     assert result.configuration is None
 
 
-def test_row_to_service() -> None:
+def test_service_from_row() -> None:
     row = {"id": 1, "name": "Inventory", "is_enabled": True}
-    result = _row_to_service(row)
+    result = ServiceResponse.from_row(row)
     assert isinstance(result, ServiceResponse)
     assert result.isEnabled is True
 
@@ -172,7 +166,7 @@ def test_list_states_with_service_type_filter() -> None:
         result = lambda_handler(_event("listStates", {"serviceTypeId": 3}), _CONTEXT)
 
     assert len(result) == 1
-    mock_db.list_states.assert_called_once_with(service_type_id=3)
+    mock_db.list_states.assert_called_once_with(service_type_id=3, schema=SCHEMA)
 
 
 def test_list_states_permission_denied() -> None:
@@ -228,7 +222,7 @@ def test_list_actions_happy_path() -> None:
 
     assert len(result) == 1
     assert result[0]["id"] == ACTION_ID
-    mock_db.list_actions.assert_called_once_with(from_state_id=4, service_type_id=3)
+    mock_db.list_actions.assert_called_once_with(from_state_id=4, service_type_id=3, schema=SCHEMA)
 
 
 # ---------------------------------------------------------------------------
@@ -361,7 +355,7 @@ def test_update_action_patches_only_specified_fields() -> None:
         )
 
     # Only "name" should be passed — not the unset optional fields.
-    mock_db.update_action.assert_called_once_with(ACTION_ID, {"name": "Lock-v2"})
+    mock_db.update_action.assert_called_once_with(ACTION_ID, {"name": "Lock-v2"}, schema=SCHEMA)
 
 
 # ---------------------------------------------------------------------------

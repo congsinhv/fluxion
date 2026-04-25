@@ -2,7 +2,7 @@
 
 Usage pattern per request (context manager):
 
-    with Database(dsn=DATABASE_URI, tenant_schema=ctx.tenant_schema) as db:
+    with Database(tenant_schema=ctx.tenant_schema) as db:
         allowed = db.has_permission(ctx.cognito_sub, ctx.tenant_id, "device:read")
 
 See design-patterns.md §5 (Repository Pattern) and §11 (Tenant-per-Schema).
@@ -49,21 +49,19 @@ class Database:
     for schema names (defense-in-depth against tenant-schema injection).
 
     Args:
-        dsn: PostgreSQL DSN (``DATABASE_URI`` env var in production).
-        tenant_schema: Validated tenant schema name (from auth context).
+        tenant_schema: Tenant schema name (from auth context); validated upstream
+            in ``get_schema_name`` before being passed in.
 
     Raises:
         DatabaseError: If the initial connection fails.
     """
 
-    def __init__(self, dsn: str = DATABASE_URI, tenant_schema: str = "") -> None:
-        self._dsn = dsn
-        self._tenant_schema = _validate_schema(tenant_schema) if tenant_schema else ""
+    def __init__(self) -> None:
         self._conn: psycopg.Connection[Any] | None = None
 
     def __enter__(self) -> Database:
         try:
-            self._conn = psycopg.connect(self._dsn, row_factory=psycopg.rows.dict_row)
+            self._conn = psycopg.connect(DATABASE_URI, row_factory=psycopg.rows.dict_row)
         except psycopg.Error as exc:
             logger.exception("db.connect_failed")
             raise DatabaseError("database connection failed") from exc

@@ -64,14 +64,12 @@ class Database:
     Context-manager only — do not use outside ``with Database(...) as db:``.
     """
 
-    def __init__(self, dsn: str = DATABASE_URI, tenant_schema: str = "") -> None:
-        self._dsn = dsn
-        self._tenant_schema = _validate_schema(tenant_schema) if tenant_schema else ""
+    def __init__(self) -> None:
         self._conn: psycopg.Connection[Any] | None = None
 
     def __enter__(self) -> Database:
         try:
-            self._conn = psycopg.connect(self._dsn, row_factory=psycopg.rows.dict_row)
+            self._conn = psycopg.connect(DATABASE_URI, row_factory=psycopg.rows.dict_row)
         except psycopg.Error as exc:
             logger.exception("db.connect_failed")
             raise DatabaseError("database connection failed") from exc
@@ -137,14 +135,14 @@ class Database:
     # List queries — return all rows (optional filter); no pagination
     # ------------------------------------------------------------------
 
-    def list_states(self, service_type_id: int | None = None) -> list[dict[str, Any]]:
+    def list_states(self, service_type_id: int | None = None, *, schema: str) -> list[dict[str, Any]]:
         """Return all states rows, optionally filtered via policies join.
 
         Note: states table has no service_type_id column. Filter by service_type_id
         is achieved via a join to policies (states reachable by the given service).
         If no filter, return all states ordered by id.
         """
-        schema = psycopg.sql.Identifier(self._tenant_schema)
+        schema = psycopg.sql.Identifier(schema)
         conn = self._require_conn()
         if service_type_id is not None:
             query = psycopg.sql.SQL(
@@ -170,9 +168,9 @@ class Database:
             logger.exception("db.list_states_failed")
             raise DatabaseError("list_states query failed") from exc
 
-    def list_policies(self, service_type_id: int | None = None) -> list[dict[str, Any]]:
+    def list_policies(self, service_type_id: int | None = None, *, schema: str) -> list[dict[str, Any]]:
         """Return all policies rows, optionally filtered by service_type_id."""
-        schema = psycopg.sql.Identifier(self._tenant_schema)
+        schema = psycopg.sql.Identifier(schema)
         conn = self._require_conn()
         if service_type_id is not None:
             query = psycopg.sql.SQL(
@@ -201,9 +199,11 @@ class Database:
         self,
         from_state_id: int | None = None,
         service_type_id: int | None = None,
+        *,
+        schema: str,
     ) -> list[dict[str, Any]]:
         """Return all actions rows, optionally filtered by from_state_id and/or service_type_id."""
-        schema = psycopg.sql.Identifier(self._tenant_schema)
+        schema = psycopg.sql.Identifier(schema)
         conn = self._require_conn()
 
         clauses: list[psycopg.sql.Composable] = []
@@ -236,9 +236,9 @@ class Database:
             logger.exception("db.list_actions_failed")
             raise DatabaseError("list_actions query failed") from exc
 
-    def list_services(self) -> list[dict[str, Any]]:
+    def list_services(self, *, schema: str) -> list[dict[str, Any]]:
         """Return all services rows ordered by id."""
-        schema = psycopg.sql.Identifier(self._tenant_schema)
+        schema = psycopg.sql.Identifier(schema)
         conn = self._require_conn()
         query = psycopg.sql.SQL(
             "SELECT id, name, is_enabled FROM {schema}.services ORDER BY id"
@@ -255,20 +255,20 @@ class Database:
     # Update mutations — dynamic PATCH via psycopg.sql.Composed
     # ------------------------------------------------------------------
 
-    def update_state(self, state_id: int, fields: dict[str, Any]) -> dict[str, Any]:
+    def update_state(self, state_id: int, fields: dict[str, Any], *, schema: str) -> dict[str, Any]:
         """Update states row by SMALLINT id; return updated row.
 
         UpdateStateInput.name is required (String!) so fields always contains name.
         """
         # Column names are code-controlled (from Pydantic field keys) — safe to use Identifier.
         col_map = {"name": "name"}
-        return self._update_row("states", "id", state_id, fields, col_map)
+        return self._update_row("states", "id", state_id, fields, col_map, schema=schema)
 
-    def update_policy(self, policy_id: int, fields: dict[str, Any]) -> dict[str, Any]:
+    def update_policy(self, policy_id: int, fields: dict[str, Any], *, schema: str) -> dict[str, Any]:
         """Update policies row by SMALLINT id; return updated row (PATCH semantics)."""
-        return self._update_row("policies", "id", policy_id, fields, _POLICY_COL_MAP)
+        return self._update_row("policies", "id", policy_id, fields, _POLICY_COL_MAP, schema=schema)
 
-    def update_action(self, action_id: str, fields: dict[str, Any]) -> dict[str, Any]:
+    def update_action(self, action_id: str, fields: dict[str, Any], *, schema: str) -> dict[str, Any]:
         """Update actions row by UUID id; return updated row (PATCH semantics).
 
         configuration is JSONB — serialise str value to JSON before binding.
@@ -283,11 +283,11 @@ class Database:
                     from exceptions import InvalidInputError  # noqa: PLC0415
 
                     raise InvalidInputError(f"configuration is not valid JSON: {val!r}") from exc
-        return self._update_row("actions", "id", action_id, fields, _ACTION_COL_MAP)
+        return self._update_row("actions", "id", action_id, fields, _ACTION_COL_MAP, schema=schema)
 
-    def update_service(self, service_id: int, fields: dict[str, Any]) -> dict[str, Any]:
+    def update_service(self, service_id: int, fields: dict[str, Any], *, schema: str) -> dict[str, Any]:
         """Update services row by SMALLINT id; return updated row (PATCH semantics)."""
-        return self._update_row("services", "id", service_id, fields, _SERVICE_COL_MAP)
+        return self._update_row("services", "id", service_id, fields, _SERVICE_COL_MAP, schema=schema)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -300,6 +300,8 @@ class Database:
         pk_val: Any,
         fields: dict[str, Any],
         col_map: dict[str, str],
+        *,
+        schema: str,
     ) -> dict[str, Any]:
         """Build and execute a dynamic UPDATE … RETURNING * for the given table.
 
@@ -310,7 +312,7 @@ class Database:
             fields:  Dict of Pydantic camelCase field names → values (exclude_unset).
             col_map: Mapping from camelCase name → snake_case DB column name.
         """
-        schema = psycopg.sql.Identifier(self._tenant_schema)
+        schema = psycopg.sql.Identifier(schema)
         conn = self._require_conn()
 
         # Map camelCase fields to DB column names; skip unknown keys.

@@ -14,14 +14,11 @@ When scaffolding a real Lambda:
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Callable
 from typing import Any
 
-from config import POWERTOOLS_SERVICE_NAME
+from config import logger
 from exceptions import FluxionError, UnknownFieldError
-
-logger = logging.getLogger(POWERTOOLS_SERVICE_NAME)
 
 # ---------------------------------------------------------------------------
 # Field handler registry — replace stubs when scaffolding a real Lambda.

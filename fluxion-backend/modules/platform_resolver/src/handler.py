@@ -13,15 +13,14 @@ Fields handled:
 
 from __future__ import annotations
 
-import json
-import logging
 from collections.abc import Callable
 from typing import Any
 
-from auth import Context, permission_required
-from config import DATABASE_URI, POWERTOOLS_SERVICE_NAME
+from auth import Context, permission_required, validate_input, validate_patch
+from config import logger
 from db import Database
-from exceptions import FluxionError, InvalidInputError, UnknownFieldError
+from exceptions import FluxionError, UnknownFieldError
+from permissions import PERM_PLATFORM_ADMIN, PERM_PLATFORM_READ
 from schema_types import (
     ActionResponse,
     ListActionsInput,
@@ -36,45 +35,7 @@ from schema_types import (
     UpdateStateInput,
 )
 
-logger = logging.getLogger(POWERTOOLS_SERVICE_NAME)
-
 FieldHandler = Callable[[dict[str, Any], Any, str], Any]
-
-
-# ---------------------------------------------------------------------------
-# Row → response helpers
-# ---------------------------------------------------------------------------
-
-
-def _row_to_state(row: dict[str, Any]) -> StateResponse:
-    return StateResponse(id=int(row["id"]), name=row["name"])
-
-
-def _row_to_policy(row: dict[str, Any]) -> PolicyResponse:
-    return PolicyResponse(
-        id=int(row["id"]),
-        name=row["name"],
-        stateId=int(row["state_id"]),
-        serviceTypeId=int(row["service_type_id"]),
-        color=row.get("color"),
-    )
-
-
-def _row_to_action(row: dict[str, Any]) -> ActionResponse:
-    cfg = row.get("configuration")
-    return ActionResponse(
-        id=str(row["id"]),
-        name=row["name"],
-        actionTypeId=int(row["action_type_id"]),
-        fromStateId=int(row["from_state_id"]) if row.get("from_state_id") is not None else None,
-        serviceTypeId=int(row["service_type_id"]) if row.get("service_type_id") is not None else None,
-        applyPolicyId=int(row["apply_policy_id"]),
-        configuration=json.dumps(cfg) if cfg is not None else None,
-    )
-
-
-def _row_to_service(row: dict[str, Any]) -> ServiceResponse:
-    return ServiceResponse(id=int(row["id"]), name=row["name"], isEnabled=bool(row["is_enabled"]))
 
 
 # ---------------------------------------------------------------------------
@@ -82,101 +43,85 @@ def _row_to_service(row: dict[str, Any]) -> ServiceResponse:
 # ---------------------------------------------------------------------------
 
 
-@permission_required("platform:read")
-def list_states(args: dict[str, Any], ctx: Context, _cid: str) -> list[dict[str, Any]]:
-    try:
-        inp = ListStatesInput.model_validate(args)
-    except Exception as exc:
-        raise InvalidInputError(str(exc)) from exc
-    with Database(dsn=DATABASE_URI, tenant_schema=ctx.tenant_schema) as db:
-        rows = db.list_states(service_type_id=inp.serviceTypeId)
-    return [_row_to_state(r).model_dump() for r in rows]
+@permission_required(PERM_PLATFORM_READ)
+@validate_input(ListStatesInput)
+def list_states(
+    _args: dict[str, Any], ctx: Context, _cid: str, inp: ListStatesInput
+) -> list[dict[str, Any]]:
+    with Database() as db:
+        rows = db.list_states(service_type_id=inp.serviceTypeId, schema=ctx.tenant_schema)
+    return [StateResponse.dump_row(r) for r in rows]
 
 
-@permission_required("platform:read")
-def list_policies(args: dict[str, Any], ctx: Context, _cid: str) -> list[dict[str, Any]]:
-    try:
-        inp = ListPoliciesInput.model_validate(args)
-    except Exception as exc:
-        raise InvalidInputError(str(exc)) from exc
-    with Database(dsn=DATABASE_URI, tenant_schema=ctx.tenant_schema) as db:
-        rows = db.list_policies(service_type_id=inp.serviceTypeId)
-    return [_row_to_policy(r).model_dump() for r in rows]
+@permission_required(PERM_PLATFORM_READ)
+@validate_input(ListPoliciesInput)
+def list_policies(
+    _args: dict[str, Any], ctx: Context, _cid: str, inp: ListPoliciesInput
+) -> list[dict[str, Any]]:
+    with Database() as db:
+        rows = db.list_policies(service_type_id=inp.serviceTypeId, schema=ctx.tenant_schema)
+    return [PolicyResponse.dump_row(r) for r in rows]
 
 
-@permission_required("platform:read")
-def list_actions(args: dict[str, Any], ctx: Context, _cid: str) -> list[dict[str, Any]]:
-    try:
-        inp = ListActionsInput.model_validate(args)
-    except Exception as exc:
-        raise InvalidInputError(str(exc)) from exc
-    with Database(dsn=DATABASE_URI, tenant_schema=ctx.tenant_schema) as db:
+@permission_required(PERM_PLATFORM_READ)
+@validate_input(ListActionsInput)
+def list_actions(
+    _args: dict[str, Any], ctx: Context, _cid: str, inp: ListActionsInput
+) -> list[dict[str, Any]]:
+    with Database() as db:
         rows = db.list_actions(
             from_state_id=inp.fromStateId,
             service_type_id=inp.serviceTypeId,
+            schema=ctx.tenant_schema,
         )
-    return [_row_to_action(r).model_dump() for r in rows]
+    return [ActionResponse.dump_row(r) for r in rows]
 
 
-@permission_required("platform:read")
-def list_services(args: dict[str, Any], ctx: Context, _cid: str) -> list[dict[str, Any]]:
-    with Database(dsn=DATABASE_URI, tenant_schema=ctx.tenant_schema) as db:
-        rows = db.list_services()
-    return [_row_to_service(r).model_dump() for r in rows]
+@permission_required(PERM_PLATFORM_READ)
+def list_services(_args: dict[str, Any], ctx: Context, _cid: str) -> list[dict[str, Any]]:
+    with Database() as db:
+        rows = db.list_services(schema=ctx.tenant_schema)
+    return [ServiceResponse.dump_row(r) for r in rows]
 
 
-@permission_required("platform:admin")
-def update_state(args: dict[str, Any], ctx: Context, _cid: str) -> dict[str, Any]:
-    try:
-        inp = UpdateStateInput.model_validate(args.get("input", {}))
-    except Exception as exc:
-        # UpdateStateInput.name is required — Pydantic raises ValidationError if missing.
-        raise InvalidInputError(str(exc)) from exc
-    with Database(dsn=DATABASE_URI, tenant_schema=ctx.tenant_schema) as db:
-        row = db.update_state(int(args["id"]), inp.model_dump())
-    return _row_to_state(row).model_dump()
+@permission_required(PERM_PLATFORM_ADMIN)
+@validate_input(UpdateStateInput, key="input")
+def update_state(
+    args: dict[str, Any], ctx: Context, _cid: str, inp: UpdateStateInput
+) -> dict[str, Any]:
+    with Database() as db:
+        row = db.update_state(int(args["id"]), inp.model_dump(), schema=ctx.tenant_schema)
+    return StateResponse.dump_row(row)
 
 
-@permission_required("platform:admin")
-def update_policy(args: dict[str, Any], ctx: Context, _cid: str) -> dict[str, Any]:
-    try:
-        inp = UpdatePolicyInput.model_validate(args.get("input", {}))
-    except Exception as exc:
-        raise InvalidInputError(str(exc)) from exc
-    fields = inp.model_dump(exclude_unset=True)
-    if not fields:
-        raise InvalidInputError("updatePolicy: at least one field must be provided")
-    with Database(dsn=DATABASE_URI, tenant_schema=ctx.tenant_schema) as db:
-        row = db.update_policy(int(args["id"]), fields)
-    return _row_to_policy(row).model_dump()
+@permission_required(PERM_PLATFORM_ADMIN)
+@validate_patch(UpdatePolicyInput, error_prefix="updatePolicy")
+def update_policy(
+    args: dict[str, Any], ctx: Context, _cid: str, fields: dict[str, Any]
+) -> dict[str, Any]:
+    with Database() as db:
+        row = db.update_policy(int(args["id"]), fields, schema=ctx.tenant_schema)
+    return PolicyResponse.dump_row(row)
 
 
-@permission_required("platform:admin")
-def update_action(args: dict[str, Any], ctx: Context, _cid: str) -> dict[str, Any]:
-    try:
-        inp = UpdateActionInput.model_validate(args.get("input", {}))
-    except Exception as exc:
-        raise InvalidInputError(str(exc)) from exc
-    fields = inp.model_dump(exclude_unset=True)
-    if not fields:
-        raise InvalidInputError("updateAction: at least one field must be provided")
-    with Database(dsn=DATABASE_URI, tenant_schema=ctx.tenant_schema) as db:
-        row = db.update_action(str(args["id"]), fields)
-    return _row_to_action(row).model_dump()
+@permission_required(PERM_PLATFORM_ADMIN)
+@validate_patch(UpdateActionInput, error_prefix="updateAction")
+def update_action(
+    args: dict[str, Any], ctx: Context, _cid: str, fields: dict[str, Any]
+) -> dict[str, Any]:
+    with Database() as db:
+        row = db.update_action(str(args["id"]), fields, schema=ctx.tenant_schema)
+    return ActionResponse.dump_row(row)
 
 
-@permission_required("platform:admin")
-def update_service(args: dict[str, Any], ctx: Context, _cid: str) -> dict[str, Any]:
-    try:
-        inp = UpdateServiceInput.model_validate(args.get("input", {}))
-    except Exception as exc:
-        raise InvalidInputError(str(exc)) from exc
-    fields = inp.model_dump(exclude_unset=True)
-    if not fields:
-        raise InvalidInputError("updateService: at least one field must be provided")
-    with Database(dsn=DATABASE_URI, tenant_schema=ctx.tenant_schema) as db:
-        row = db.update_service(int(args["id"]), fields)
-    return _row_to_service(row).model_dump()
+@permission_required(PERM_PLATFORM_ADMIN)
+@validate_patch(UpdateServiceInput, error_prefix="updateService")
+def update_service(
+    args: dict[str, Any], ctx: Context, _cid: str, fields: dict[str, Any]
+) -> dict[str, Any]:
+    with Database() as db:
+        row = db.update_service(int(args["id"]), fields, schema=ctx.tenant_schema)
+    return ServiceResponse.dump_row(row)
 
 
 # ---------------------------------------------------------------------------

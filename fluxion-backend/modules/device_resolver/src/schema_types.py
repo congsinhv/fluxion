@@ -12,7 +12,12 @@ Table mapping (tenant schema, from migration 4768d32c8037):
 
 from __future__ import annotations
 
+import json
+from typing import Any
+
 from pydantic import BaseModel, ConfigDict, Field
+
+from utils import to_iso
 
 
 class BaseInput(BaseModel):
@@ -46,6 +51,28 @@ class DeviceInformationResponse(BaseResponse):
     lastCheckinAt: str | None = None
     extFields: str | None = None  # JSONB serialised as string for AppSync AWSJSON
 
+    @classmethod
+    def from_row(cls, row: dict[str, Any]) -> DeviceInformationResponse:
+        ext = row.get("ext_fields")
+        return cls(
+            id=str(row["di_id"]),
+            deviceId=str(row["id"]),
+            serialNumber=row["serial_number"] or "",
+            udid=row["udid"] or "",
+            name=row.get("di_name"),
+            model=row.get("model"),
+            osVersion=row.get("os_version"),
+            batteryLevel=row.get("battery_level"),
+            wifiMac=row.get("wifi_mac"),
+            isSupervised=row.get("is_supervised"),
+            lastCheckinAt=to_iso(row.get("last_checkin_at")),
+            extFields=json.dumps(ext) if ext is not None else None,
+        )
+
+    @classmethod
+    def dump_row(cls, row: dict[str, Any]) -> dict[str, Any]:
+        return cls.from_row(row).model_dump()
+
 
 # ---------------------------------------------------------------------------
 # Device — id + timestamps + nested information; nullable complex fields omitted
@@ -58,6 +85,22 @@ class DeviceResponse(BaseResponse):
     createdAt: str
     updatedAt: str
     information: DeviceInformationResponse | None = None
+
+    @classmethod
+    def from_row(cls, row: dict[str, Any]) -> DeviceResponse:
+        info: DeviceInformationResponse | None = None
+        if row.get("di_id") is not None:
+            info = DeviceInformationResponse.from_row(row)
+        return cls(
+            id=str(row["id"]),
+            createdAt=to_iso(row["created_at"]) or "",
+            updatedAt=to_iso(row["updated_at"]) or "",
+            information=info,
+        )
+
+    @classmethod
+    def dump_row(cls, row: dict[str, Any]) -> dict[str, Any]:
+        return cls.from_row(row).model_dump()
 
 
 # ---------------------------------------------------------------------------
@@ -83,6 +126,22 @@ class MilestoneResponse(BaseResponse):
     policyId: int | None = None
     createdAt: str
     extFields: str | None = None
+
+    @classmethod
+    def from_row(cls, row: dict[str, Any]) -> MilestoneResponse:
+        ext = row.get("ext_fields")
+        return cls(
+            id=str(row["id"]),
+            deviceId=str(row["device_id"]),
+            assignedActionId=str(row["assigned_action_id"]) if row.get("assigned_action_id") else None,
+            policyId=row.get("policy_id"),
+            createdAt=to_iso(row["created_at"]) or "",
+            extFields=json.dumps(ext) if ext is not None else None,
+        )
+
+    @classmethod
+    def dump_row(cls, row: dict[str, Any]) -> dict[str, Any]:
+        return cls.from_row(row).model_dump()
 
 
 # ---------------------------------------------------------------------------

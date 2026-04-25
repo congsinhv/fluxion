@@ -24,6 +24,9 @@ Table mapping (per-tenant schema, from migration 4768d32c8037):
 
 from __future__ import annotations
 
+import json
+from typing import Any
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -50,6 +53,14 @@ class StateResponse(BaseResponse):
     id: int
     name: str
 
+    @classmethod
+    def from_row(cls, row: dict[str, Any]) -> StateResponse:
+        return cls(id=int(row["id"]), name=row["name"])
+
+    @classmethod
+    def dump_row(cls, row: dict[str, Any]) -> dict[str, Any]:
+        return cls.from_row(row).model_dump()
+
 
 class ServiceResponse(BaseResponse):
     """Maps services table → GraphQL Service type."""
@@ -57,6 +68,14 @@ class ServiceResponse(BaseResponse):
     id: int
     name: str
     isEnabled: bool
+
+    @classmethod
+    def from_row(cls, row: dict[str, Any]) -> ServiceResponse:
+        return cls(id=int(row["id"]), name=row["name"], isEnabled=bool(row["is_enabled"]))
+
+    @classmethod
+    def dump_row(cls, row: dict[str, Any]) -> dict[str, Any]:
+        return cls.from_row(row).model_dump()
 
 
 class PolicyResponse(BaseResponse):
@@ -71,6 +90,20 @@ class PolicyResponse(BaseResponse):
     stateId: int
     serviceTypeId: int
     color: str | None = None
+
+    @classmethod
+    def from_row(cls, row: dict[str, Any]) -> PolicyResponse:
+        return cls(
+            id=int(row["id"]),
+            name=row["name"],
+            stateId=int(row["state_id"]),
+            serviceTypeId=int(row["service_type_id"]),
+            color=row.get("color"),
+        )
+
+    @classmethod
+    def dump_row(cls, row: dict[str, Any]) -> dict[str, Any]:
+        return cls.from_row(row).model_dump()
 
 
 class ActionResponse(BaseResponse):
@@ -87,6 +120,23 @@ class ActionResponse(BaseResponse):
     serviceTypeId: int | None = None
     applyPolicyId: int
     configuration: str | None = None  # JSONB serialised as string for AppSync AWSJSON
+
+    @classmethod
+    def from_row(cls, row: dict[str, Any]) -> ActionResponse:
+        cfg = row.get("configuration")
+        return cls(
+            id=str(row["id"]),
+            name=row["name"],
+            actionTypeId=int(row["action_type_id"]),
+            fromStateId=int(row["from_state_id"]) if row.get("from_state_id") is not None else None,
+            serviceTypeId=int(row["service_type_id"]) if row.get("service_type_id") is not None else None,
+            applyPolicyId=int(row["apply_policy_id"]),
+            configuration=json.dumps(cfg) if cfg is not None else None,
+        )
+
+    @classmethod
+    def dump_row(cls, row: dict[str, Any]) -> dict[str, Any]:
+        return cls.from_row(row).model_dump()
 
 
 # ---------------------------------------------------------------------------

@@ -9,8 +9,13 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 from exceptions import NotFoundError
-from handler import _row_to_device, _row_to_milestone, lambda_handler
-from schema_types import DeviceConnectionResponse, DeviceResponse, MilestoneConnectionResponse
+from handler import lambda_handler
+from schema_types import (
+    DeviceConnectionResponse,
+    DeviceResponse,
+    MilestoneConnectionResponse,
+    MilestoneResponse,
+)
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -188,7 +193,7 @@ def test_list_devices_with_filter() -> None:
 
     assert result["items"] == []
     mock_data_db.list_devices.assert_called_once_with(
-        limit=5, after_id=None, state_id=4, policy_id=None, search=None
+        limit=5, after_id=None, state_id=4, policy_id=None, search=None, schema=SCHEMA
     )
 
 
@@ -303,7 +308,7 @@ def test_row_to_device_datetime_iso_separator() -> None:
         "updated_at": dt,
         "di_id": None,
     }
-    result = _row_to_device(row)
+    result = DeviceResponse.from_row(row)
     assert "T" in result.createdAt, f"expected T separator, got: {result.createdAt!r}"
     assert "T" in result.updatedAt, f"expected T separator, got: {result.updatedAt!r}"
     assert " " not in result.createdAt
@@ -327,7 +332,7 @@ def test_row_to_device_last_checkin_iso_separator() -> None:
         "last_checkin_at": dt,
         "ext_fields": None,
     }
-    result = _row_to_device(row)
+    result = DeviceResponse.from_row(row)
     assert result.information is not None
     assert result.information.lastCheckinAt is not None
     assert "T" in result.information.lastCheckinAt
@@ -343,6 +348,6 @@ def test_row_to_milestone_iso_separator() -> None:
         "created_at": dt,
         "ext_fields": None,
     }
-    result = _row_to_milestone(row)
+    result = MilestoneResponse.from_row(row)
     assert "T" in result.createdAt, f"expected T separator, got: {result.createdAt!r}"
     assert " " not in result.createdAt

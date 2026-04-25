@@ -11,11 +11,14 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, TypeVar
 
-from config import DATABASE_URI, logger
+from pydantic import BaseModel
+
+from config import logger
 from db import Database
 from exceptions import AuthenticationError, ForbiddenError, InvalidInputError
 
 F = TypeVar("F", bound=Callable[..., Any])
+M = TypeVar("M", bound=BaseModel)
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,7 +47,7 @@ def build_context_from(event: dict[str, Any]) -> Context:
             f"custom:tenant_id is not an integer: {raw_tenant_id!r}"
         ) from exc
 
-    with Database(dsn=DATABASE_URI) as db:
+    with Database() as db:
         tenant_schema = db.get_schema_name(tenant_id)
         user_id = _resolve_user_id(db, cognito_sub)
 
@@ -72,7 +75,7 @@ def permission_required(permission: str) -> Callable[[F], F]:
             correlation_id: str,
         ) -> Any:
             ctx = build_context_from(event)
-            with Database(dsn=DATABASE_URI, tenant_schema=ctx.tenant_schema) as db:
+            with Database() as db:
                 if not db.has_permission(ctx.cognito_sub, ctx.tenant_id, permission):
                     logger.warning(
                         "auth.permission_denied",
@@ -85,6 +88,40 @@ def permission_required(permission: str) -> Callable[[F], F]:
                     )
                     raise ForbiddenError(f"missing permission: {permission}")
             return fn(args, ctx, correlation_id)
+
+        return wrapper  # type: ignore[return-value]
+
+    return decorator
+
+
+def validate_input(model: type[M], key: str | None = None) -> Callable[[F], F]:  # noqa: UP047
+    """Decorator: validate an input dict against a Pydantic model.
+
+    The validated instance is appended as the last positional arg to the wrapped fn.
+    Wrapped signature: ``(args, ctx, correlation_id, inp)``.
+
+    Args:
+        model: Pydantic model class to validate against.
+        key: If set, validate ``args[key]`` (default empty dict if missing) instead
+            of ``args``. Use ``key="input"`` for AppSync mutation handlers.
+
+    Raises:
+        InvalidInputError: Validation failed.
+    """
+
+    def decorator(fn: F) -> F:
+        @functools.wraps(fn)
+        def wrapper(
+            args: dict[str, Any],
+            ctx: Context,
+            correlation_id: str,
+        ) -> Any:
+            raw: Any = args if key is None else args.get(key, {})
+            try:
+                inp = model.model_validate(raw)
+            except Exception as exc:
+                raise InvalidInputError(str(exc)) from exc
+            return fn(args, ctx, correlation_id, inp)
 
         return wrapper  # type: ignore[return-value]
 

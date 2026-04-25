@@ -20,7 +20,7 @@ SCHEMA = "dev1"
 
 
 def _make_db(schema: str = SCHEMA) -> Database:
-    return Database(dsn="postgresql://test", tenant_schema=schema)
+    return Database()
 
 
 _UNSET = object()  # sentinel to distinguish "not provided" from explicit None
@@ -57,16 +57,6 @@ def test_validate_schema_valid() -> None:
 def test_validate_schema_invalid_raises() -> None:
     with pytest.raises(DatabaseError):
         _validate_schema("BAD SCHEMA!")
-
-
-# ---------------------------------------------------------------------------
-# __init__ — invalid schema rejected at construction
-# ---------------------------------------------------------------------------
-
-
-def test_database_init_invalid_schema_raises() -> None:
-    with pytest.raises(DatabaseError):
-        Database(dsn="", tenant_schema="INVALID SCHEMA")
 
 
 # ---------------------------------------------------------------------------
@@ -130,7 +120,7 @@ def test_list_states_no_filter() -> None:
     rows = [{"id": 1, "name": "Idle"}, {"id": 2, "name": "Registered"}]
     conn = _mock_conn(rows=rows)
     db._conn = conn  # noqa: SLF001
-    result = db.list_states()
+    result = db.list_states(schema=SCHEMA)
     assert len(result) == 2
     assert result[0]["name"] == "Idle"
 
@@ -140,7 +130,7 @@ def test_list_states_with_service_type_filter() -> None:
     rows = [{"id": 4, "name": "Active"}]
     conn = _mock_conn(rows=rows)
     db._conn = conn  # noqa: SLF001
-    result = db.list_states(service_type_id=3)
+    result = db.list_states(service_type_id=3, schema=SCHEMA)
     assert len(result) == 1
 
 
@@ -154,7 +144,7 @@ def test_list_states_db_error_raises() -> None:
     cur.execute.side_effect = psycopg.OperationalError("connection lost")
     db._conn = conn  # noqa: SLF001
     with pytest.raises(DatabaseError):
-        db.list_states()
+        db.list_states(schema=SCHEMA)
 
 
 # ---------------------------------------------------------------------------
@@ -167,7 +157,7 @@ def test_list_policies_no_filter() -> None:
     rows = [{"id": 4, "name": "Active", "state_id": 4, "service_type_id": 3, "color": None}]
     conn = _mock_conn(rows=rows)
     db._conn = conn  # noqa: SLF001
-    result = db.list_policies()
+    result = db.list_policies(schema=SCHEMA)
     assert len(result) == 1
     assert result[0]["name"] == "Active"
 
@@ -176,7 +166,7 @@ def test_list_policies_with_filter() -> None:
     db = _make_db()
     conn = _mock_conn(rows=[])
     db._conn = conn  # noqa: SLF001
-    result = db.list_policies(service_type_id=1)
+    result = db.list_policies(service_type_id=1, schema=SCHEMA)
     assert result == []
 
 
@@ -193,7 +183,7 @@ def test_list_actions_no_filter() -> None:
     }
     conn = _mock_conn(rows=[row])
     db._conn = conn  # noqa: SLF001
-    result = db.list_actions()
+    result = db.list_actions(schema=SCHEMA)
     assert len(result) == 1
     assert str(result[0]["id"]) == ACTION_ID
 
@@ -202,7 +192,7 @@ def test_list_actions_with_both_filters() -> None:
     db = _make_db()
     conn = _mock_conn(rows=[])
     db._conn = conn  # noqa: SLF001
-    result = db.list_actions(from_state_id=4, service_type_id=3)
+    result = db.list_actions(from_state_id=4, service_type_id=3, schema=SCHEMA)
     assert result == []
 
 
@@ -219,7 +209,7 @@ def test_list_services_returns_all() -> None:
     ]
     conn = _mock_conn(rows=rows)
     db._conn = conn  # noqa: SLF001
-    result = db.list_services()
+    result = db.list_services(schema=SCHEMA)
     assert len(result) == 2
     assert result[1]["is_enabled"] is False
 
@@ -234,7 +224,7 @@ def test_update_state_success() -> None:
     updated = {"id": 1, "name": "Idle-v2"}
     conn = _mock_conn(one_row=updated)
     db._conn = conn  # noqa: SLF001
-    result = db.update_state(1, {"name": "Idle-v2"})
+    result = db.update_state(1, {"name": "Idle-v2"}, schema=SCHEMA)
     assert result["name"] == "Idle-v2"
 
 
@@ -243,7 +233,7 @@ def test_update_state_not_found_raises() -> None:
     conn = _mock_conn(one_row=None)
     db._conn = conn  # noqa: SLF001
     with pytest.raises(NotFoundError):
-        db.update_state(999, {"name": "Ghost"})
+        db.update_state(999, {"name": "Ghost"}, schema=SCHEMA)
 
 
 # ---------------------------------------------------------------------------
@@ -256,7 +246,7 @@ def test_update_policy_partial_fields() -> None:
     updated = {"id": 4, "name": "Active-v2", "state_id": 4, "service_type_id": 3, "color": "ff0000"}
     conn = _mock_conn(one_row=updated)
     db._conn = conn  # noqa: SLF001
-    result = db.update_policy(4, {"name": "Active-v2", "color": "ff0000"})
+    result = db.update_policy(4, {"name": "Active-v2", "color": "ff0000"}, schema=SCHEMA)
     assert result["color"] == "ff0000"
 
 
@@ -275,7 +265,7 @@ def test_update_action_with_json_string_configuration() -> None:
     conn = _mock_conn(one_row=updated)
     db._conn = conn  # noqa: SLF001
     # Pass configuration as JSON string (as AppSync sends AWSJSON as string)
-    result = db.update_action(ACTION_ID, {"configuration": '{"timeout": 30}'})
+    result = db.update_action(ACTION_ID, {"configuration": '{"timeout": 30}'}, schema=SCHEMA)
     assert result["id"] == ACTION_ID
 
 
@@ -286,7 +276,7 @@ def test_update_action_invalid_json_configuration_raises() -> None:
     from exceptions import InvalidInputError
 
     with pytest.raises(InvalidInputError, match="not valid JSON"):
-        db.update_action(ACTION_ID, {"configuration": "not-json{"})
+        db.update_action(ACTION_ID, {"configuration": "not-json{"}, schema=SCHEMA)
 
 
 # ---------------------------------------------------------------------------
@@ -299,7 +289,7 @@ def test_update_service_success() -> None:
     updated = {"id": 2, "name": "Supply Chain", "is_enabled": True}
     conn = _mock_conn(one_row=updated)
     db._conn = conn  # noqa: SLF001
-    result = db.update_service(2, {"isEnabled": True})
+    result = db.update_service(2, {"isEnabled": True}, schema=SCHEMA)
     assert result["is_enabled"] is True
 
 
@@ -308,7 +298,7 @@ def test_update_service_not_found_raises() -> None:
     conn = _mock_conn(one_row=None)
     db._conn = conn  # noqa: SLF001
     with pytest.raises(NotFoundError):
-        db.update_service(999, {"name": "Ghost"})
+        db.update_service(999, {"name": "Ghost"}, schema=SCHEMA)
 
 
 # ---------------------------------------------------------------------------
@@ -320,7 +310,7 @@ def test_database_context_manager_closes_conn() -> None:
     with patch("psycopg.connect") as mock_connect:
         mock_conn = MagicMock()
         mock_connect.return_value = mock_conn
-        db = Database(dsn="postgresql://test", tenant_schema=SCHEMA)
+        db = Database()
         with db:
             pass
         mock_conn.close.assert_called_once()
@@ -330,6 +320,6 @@ def test_database_context_manager_connect_failure_raises() -> None:
     import psycopg
 
     with patch("psycopg.connect", side_effect=psycopg.OperationalError("refused")):
-        db = Database(dsn="postgresql://bad", tenant_schema=SCHEMA)
+        db = Database()
         with pytest.raises(DatabaseError, match="connection failed"):
             db.__enter__()
