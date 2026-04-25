@@ -17,6 +17,14 @@ inputs:
     description: S3 bucket for remote backend (passed to terraform init -backend-config).
     required: false
     default: "fluxion-backend-tfstate"
+  targets:
+    description: |
+      Optional space-separated targets for partial apply (e.g. "module.ecr aws_ssm_parameter.ecr_repo_urls").
+      Each entry becomes a `-target=<value>` arg on plan + apply. Used for bootstrap
+      stages where downstream jobs (docker push) need a subset of resources before
+      the full apply can run.
+    required: false
+    default: ""
 
 runs:
   using: composite
@@ -31,10 +39,20 @@ runs:
       working-directory: ${{ inputs.working-directory }}
       run: terraform init -input=false -backend-config="bucket=${{ inputs.backend-bucket }}"
 
+    - name: build target args
+      id: targets
+      shell: bash
+      run: |
+        args=""
+        for t in ${{ inputs.targets }}; do
+          args="$args -target=$t"
+        done
+        echo "args=$args" >> "$GITHUB_OUTPUT"
+
     - name: terraform plan
       shell: bash
       working-directory: ${{ inputs.working-directory }}
-      run: terraform plan -input=false -out=tfplan -no-color
+      run: terraform plan -input=false -out=tfplan -no-color ${{ steps.targets.outputs.args }}
 
     - name: terraform apply
       if: inputs.apply == 'true'
