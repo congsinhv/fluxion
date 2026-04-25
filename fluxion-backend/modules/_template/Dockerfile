@@ -1,10 +1,18 @@
-# Inherits from the workspace-level base image built from Dockerfile.resolver.
-# Build the base first: docker build -f Dockerfile.resolver -t fluxion-backend/resolver-base:latest .
-FROM fluxion-backend/resolver-base:latest
+# Template Lambda container image — copy this when scaffolding a new resolver.
+# Self-contained: no dependency on a workspace-built base image.
+# Build context (from CI/.github/workflows/deploy.yml): fluxion-backend/
 
-# Copy src/ contents flat into LAMBDA_TASK_ROOT so imports resolve as
-# `from config import X` rather than `from src.config import X`.
-# This mirrors pytest pythonpath = ["src"] at test time.
-COPY src/ ${LAMBDA_TASK_ROOT}/
+FROM public.ecr.aws/lambda/python:3.12
+
+# Runtime deps mirror modules/_template/pyproject.toml.
+# When scaffolding a real Lambda, update this list to match the new module's deps.
+RUN pip install --no-cache-dir \
+    "psycopg[binary]>=3.1,<4" \
+    "pydantic>=2.6" \
+    "aws-lambda-powertools>=2.30"
+
+# Source — flat-COPY into LAMBDA_TASK_ROOT so imports resolve as
+# `from config import X` (mirrors pytest pythonpath = ["src"]).
+COPY modules/_template/src/ ${LAMBDA_TASK_ROOT}/
 
 CMD ["handler.lambda_handler"]

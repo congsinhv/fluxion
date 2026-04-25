@@ -1,11 +1,17 @@
-FROM fluxion-backend/resolver-base:latest
+# user_resolver Lambda container image.
+# Self-contained: no dependency on a workspace-built base image.
+# Build context (from CI/.github/workflows/deploy.yml): fluxion-backend/
 
-# user_resolver requires boto3 for Cognito admin operations.
-# The resolver-base image only installs psycopg/pydantic/powertools;
-# boto3 is available in the AWS Lambda runtime but must be added here
-# so that the container image works correctly in integration tests.
-RUN uv pip install --system --no-cache "boto3>=1.34"
+FROM public.ecr.aws/lambda/python:3.12
 
-COPY src/ ${LAMBDA_TASK_ROOT}/
+# Runtime deps mirror modules/user_resolver/pyproject.toml.
+# boto3 is required for Cognito admin operations (admin_create_user, etc.).
+RUN pip install --no-cache-dir \
+    "psycopg[binary]>=3.1,<4" \
+    "pydantic>=2.6" \
+    "aws-lambda-powertools>=2.30" \
+    "boto3>=1.34"
+
+COPY modules/user_resolver/src/ ${LAMBDA_TASK_ROOT}/
 
 CMD ["handler.lambda_handler"]
