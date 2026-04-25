@@ -135,10 +135,38 @@ jobs:
             echo "::endgroup::"
           done
 
-  tf-backend:
-    name: terraform backend (dev)
+  tf-backend-ecr-bootstrap:
+    # Bootstrap stage: create ECR repos before docker-push runs.
+    # The full tf-backend apply needs Lambda image_uri to resolve to an existing
+    # image, which docker-push only produces after ECR repos exist. This stage
+    # breaks the chicken-and-egg by applying the ECR module first.
+    name: terraform backend ECR bootstrap (dev)
     needs: [detect-changes, lint-test-backend]
     if: needs.detect-changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/aws-oidc-login
+        with:
+          role-arn: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          region: ${{ env.AWS_REGION }}
+      - uses: ./.github/actions/terraform-apply
+        with:
+          working-directory: fluxion-backend/terraform/envs/dev
+          apply: ${{ github.event_name == 'push' }}
+          terraform-version: ${{ env.TF_VERSION }}
+          targets: "module.ecr aws_ssm_parameter.ecr_repo_urls"
+
+  tf-backend:
+    name: terraform backend (dev)
+    # Run AFTER docker-push so Lambda image_uri references an image that exists.
+    needs: [detect-changes, lint-test-backend, docker-push-backend]
+    if: |
+      always() &&
+      needs.detect-changes.outputs.backend == 'true' &&
+      needs.lint-test-backend.result == 'success' &&
+      (needs.docker-push-backend.result == 'success' || needs.docker-push-backend.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -173,7 +201,9 @@ jobs:
 
   docker-push-backend:
     name: docker push backend matrix
-    needs: [detect-changes, tf-backend]
+    # Depends on the ECR bootstrap (repos must exist) — NOT on full tf-backend,
+    # which itself depends on this job for image_uri to resolve.
+    needs: [detect-changes, tf-backend-ecr-bootstrap]
     if: >-
       github.event_name == 'push' &&
       needs.detect-changes.outputs.backend == 'true' &&
