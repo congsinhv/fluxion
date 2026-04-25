@@ -17,7 +17,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, TypeVar
 
-from config import DATABASE_URI, logger
+from config import logger
 from db import Database
 from exceptions import AuthenticationError, ForbiddenError, InvalidInputError
 
