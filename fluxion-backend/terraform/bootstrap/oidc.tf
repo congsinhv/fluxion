@@ -170,7 +170,9 @@ data "aws_iam_policy_document" "gha_deploy_inline" {
   }
 
   # SQS queue lifecycle for backend Lambda async paths (action_resolver / upload_resolver
-  # → SQS, plus DLQs). Scoped to fluxion-* queues only.
+  # → SQS, plus DLQs). Scoped to all fluxion-* queues across envs.
+  # NOTE: bootstrap's resource_name_prefix is "fluxion-backend"; dev env uses
+  # "fluxion-dev". Use a literal "fluxion-*" wildcard to cover both.
   statement {
     sid    = "SQSQueueLifecycle"
     effect = "Allow"
@@ -186,50 +188,22 @@ data "aws_iam_policy_document" "gha_deploy_inline" {
       "sqs:UntagQueue",
     ]
     resources = [
-      "arn:aws:sqs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:${var.resource_name_prefix}-*",
+      "arn:aws:sqs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:fluxion-*",
     ]
   }
 
   # S3 application buckets (e.g. fluxion-dev-uploads for action-log error CSV reports).
-  # Tfstate bucket has its own scoped statement above.
+  # Tfstate bucket has its own scoped statement above. Allow all s3:* on the literal
+  # bucket ARNs — matches the per-service-wildcard pattern used by InfraManagement
+  # (cognito-idp:*, lambda:*, etc.) and avoids whack-a-mole for sub-actions like
+  # GetBucketWebsite that the AWS provider calls during read.
   statement {
-    sid    = "S3AppBuckets"
-    effect = "Allow"
-    actions = [
-      "s3:CreateBucket",
-      "s3:DeleteBucket",
-      "s3:ListBucket",
-      "s3:GetObject",
-      "s3:PutObject",
-      "s3:DeleteObject",
-      "s3:GetBucketTagging",
-      "s3:PutBucketTagging",
-      "s3:GetBucketVersioning",
-      "s3:PutBucketVersioning",
-      "s3:GetBucketLifecycleConfiguration",
-      "s3:PutBucketLifecycleConfiguration",
-      "s3:DeleteBucketLifecycle",
-      "s3:GetBucketPublicAccessBlock",
-      "s3:PutBucketPublicAccessBlock",
-      "s3:GetBucketEncryption",
-      "s3:PutBucketEncryption",
-      "s3:GetBucketOwnershipControls",
-      "s3:PutBucketOwnershipControls",
-      "s3:GetBucketAcl",
-      "s3:PutBucketAcl",
-      "s3:GetBucketCORS",
-      "s3:PutBucketCORS",
-      "s3:GetBucketPolicy",
-      "s3:PutBucketPolicy",
-      "s3:DeleteBucketPolicy",
-      "s3:GetBucketLogging",
-      "s3:PutBucketLogging",
-    ]
+    sid     = "S3AppBuckets"
+    effect  = "Allow"
+    actions = ["s3:*"]
     resources = [
-      "arn:aws:s3:::${var.resource_name_prefix}-uploads",
-      "arn:aws:s3:::${var.resource_name_prefix}-uploads/*",
-      "arn:aws:s3:::fluxion-dev-uploads",
-      "arn:aws:s3:::fluxion-dev-uploads/*",
+      "arn:aws:s3:::fluxion-*-uploads",
+      "arn:aws:s3:::fluxion-*-uploads/*",
     ]
   }
 
