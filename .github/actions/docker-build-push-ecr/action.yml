@@ -36,3 +36,8 @@ runs:
           ${{ steps.ecr.outputs.registry }}/${{ inputs.repository }}:latest
         cache-from: type=gha
         cache-to: type=gha,mode=max
+        # AWS Lambda only accepts Docker image manifest v2 schema 2; it rejects
+        # OCI image indexes that buildx adds via provenance/SBOM attestations.
+        # Disabling these keeps the manifest format Lambda-compatible.
+        provenance: false
+        sbom: false
