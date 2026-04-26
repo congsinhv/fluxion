@@ -169,6 +169,70 @@ data "aws_iam_policy_document" "gha_deploy_inline" {
     resources = ["*"]
   }
 
+  # SQS queue lifecycle for backend Lambda async paths (action_resolver / upload_resolver
+  # → SQS, plus DLQs). Scoped to fluxion-* queues only.
+  statement {
+    sid    = "SQSQueueLifecycle"
+    effect = "Allow"
+    actions = [
+      "sqs:CreateQueue",
+      "sqs:DeleteQueue",
+      "sqs:GetQueueAttributes",
+      "sqs:SetQueueAttributes",
+      "sqs:GetQueueUrl",
+      "sqs:ListQueues",
+      "sqs:ListQueueTags",
+      "sqs:TagQueue",
+      "sqs:UntagQueue",
+    ]
+    resources = [
+      "arn:aws:sqs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:${var.resource_name_prefix}-*",
+    ]
+  }
+
+  # S3 application buckets (e.g. fluxion-dev-uploads for action-log error CSV reports).
+  # Tfstate bucket has its own scoped statement above.
+  statement {
+    sid    = "S3AppBuckets"
+    effect = "Allow"
+    actions = [
+      "s3:CreateBucket",
+      "s3:DeleteBucket",
+      "s3:ListBucket",
+      "s3:GetObject",
+      "s3:PutObject",
+      "s3:DeleteObject",
+      "s3:GetBucketTagging",
+      "s3:PutBucketTagging",
+      "s3:GetBucketVersioning",
+      "s3:PutBucketVersioning",
+      "s3:GetBucketLifecycleConfiguration",
+      "s3:PutBucketLifecycleConfiguration",
+      "s3:DeleteBucketLifecycle",
+      "s3:GetBucketPublicAccessBlock",
+      "s3:PutBucketPublicAccessBlock",
+      "s3:GetBucketEncryption",
+      "s3:PutBucketEncryption",
+      "s3:GetBucketOwnershipControls",
+      "s3:PutBucketOwnershipControls",
+      "s3:GetBucketAcl",
+      "s3:PutBucketAcl",
+      "s3:GetBucketCORS",
+      "s3:PutBucketCORS",
+      "s3:GetBucketPolicy",
+      "s3:PutBucketPolicy",
+      "s3:DeleteBucketPolicy",
+      "s3:GetBucketLogging",
+      "s3:PutBucketLogging",
+    ]
+    resources = [
+      "arn:aws:s3:::${var.resource_name_prefix}-uploads",
+      "arn:aws:s3:::${var.resource_name_prefix}-uploads/*",
+      "arn:aws:s3:::fluxion-dev-uploads",
+      "arn:aws:s3:::fluxion-dev-uploads/*",
+    ]
+  }
+
   statement {
     sid    = "SSMParamsScoped"
     effect = "Allow"
