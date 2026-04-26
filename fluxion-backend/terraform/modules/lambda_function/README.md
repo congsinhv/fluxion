@@ -26,9 +26,9 @@ module "api" {
   source = "../../modules/api"
   # ...
   lambda_resolver_arns = {
-    device   = module.resolver_device.invoke_arn
-    platform = module.resolver_platform.invoke_arn
-    user     = module.resolver_user.invoke_arn
+    device   = module.resolver_device.function_arn
+    platform = module.resolver_platform.function_arn
+    user     = module.resolver_user.function_arn
   }
 }
 ```
@@ -80,8 +80,8 @@ module "resolver_user" {
 
 | Name | Description |
 |------|-------------|
-| `function_arn` | ARN of the Lambda function |
-| `invoke_arn` | Invoke ARN for AppSync Lambda data source |
+| `function_arn` | Plain Lambda ARN. **Use this for AppSync** Lambda data sources. |
+| `invoke_arn` | API Gateway-formatted invoke URL. Use ONLY for API Gateway integrations, NOT AppSync. |
 | `role_arn` | ARN of the Lambda execution IAM role |
 | `function_name` | Canonical function name as registered in AWS |
 

@@ -107,9 +107,9 @@ module "api" {
   schema_path          = "${path.module}/../../../schema.graphql"
   cognito_user_pool_id = module.auth.user_pool_id
   lambda_resolver_arns = {
-    device   = module.resolver_device.invoke_arn
-    platform = module.resolver_platform.invoke_arn
-    user     = module.resolver_user.invoke_arn
+    device   = module.resolver_device.function_arn
+    platform = module.resolver_platform.function_arn
+    user     = module.resolver_user.function_arn
   }
   log_retention_days  = 14
   log_field_log_level = "ERROR"
