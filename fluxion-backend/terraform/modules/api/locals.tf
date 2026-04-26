@@ -23,17 +23,13 @@ locals {
       Query    = ["getTAC", "listTACs"]
       Mutation = ["createTAC", "updateTAC", "deleteTAC"]
     }
-    action_log = {
-      Query    = ["getActionLog", "listActionLogs"]
-      Mutation = ["generateActionLogErrorReport"]
-    }
     user = {
       Query    = ["getUser", "listUsers", "getCurrentUser"]
       Mutation = ["createUser", "updateUser"]
     }
     action = {
-      Query    = []
-      Mutation = ["assignAction", "assignBulkAction"]
+      Query    = ["getActionLog", "listActionLogs"]
+      Mutation = ["assignAction", "assignBulkAction", "generateActionLogErrorReport"]
     }
     upload = {
       Query    = []

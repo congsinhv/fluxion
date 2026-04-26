@@ -29,7 +29,7 @@ variable "lambda_resolver_arns" {
   description = <<-EOT
     Map of resolver key → Lambda function ARN. Keys:
     device | platform | user | action | upload | chat |
-    tac | message_template | action_log.
+    tac | message_template.
 
     Empty map = deploy AppSync API + schema + internal NONE
     data source only; skip all Lambda-backed data sources and

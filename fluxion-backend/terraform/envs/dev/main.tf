@@ -87,7 +87,7 @@ module "resolver_user" {
   }
   extra_policy_statements = [
     {
-      effect  = "Allow"
+      effect = "Allow"
       actions = [
         "cognito-idp:AdminCreateUser",
         "cognito-idp:AdminDeleteUser",
@@ -95,6 +95,56 @@ module "resolver_user" {
         "cognito-idp:AdminUpdateUserAttributes",
       ]
       resources = [module.auth.user_pool_arn]
+    },
+  ]
+}
+
+module "resolver_action" {
+  source        = "../../modules/lambda_function"
+  function_name = "${var.resource_name_prefix}-action-resolver"
+  image_uri     = "${module.ecr.repository_urls["action_resolver"]}:latest"
+  env = {
+    DATABASE_URI             = local.database_uri
+    POWERTOOLS_SERVICE_NAME  = "action_resolver"
+    ACTION_TRIGGER_QUEUE_URL = aws_sqs_queue.action_trigger.url
+    UPLOADS_BUCKET           = aws_s3_bucket.uploads.id
+  }
+  vpc_config = {
+    subnet_ids = module.network.private_subnet_ids
+    sg_id      = module.network.lambda_sg_id
+  }
+  extra_policy_statements = [
+    {
+      effect    = "Allow"
+      actions   = ["sqs:SendMessage"]
+      resources = [aws_sqs_queue.action_trigger.arn]
+    },
+    {
+      effect    = "Allow"
+      actions   = ["s3:PutObject", "s3:GetObject"]
+      resources = ["${aws_s3_bucket.uploads.arn}/action-log-errors/*"]
+    },
+  ]
+}
+
+module "resolver_upload" {
+  source        = "../../modules/lambda_function"
+  function_name = "${var.resource_name_prefix}-upload-resolver"
+  image_uri     = "${module.ecr.repository_urls["upload_resolver"]}:latest"
+  env = {
+    DATABASE_URI               = local.database_uri
+    POWERTOOLS_SERVICE_NAME    = "upload_resolver"
+    UPLOAD_PROCESSOR_QUEUE_URL = aws_sqs_queue.upload_processor.url
+  }
+  vpc_config = {
+    subnet_ids = module.network.private_subnet_ids
+    sg_id      = module.network.lambda_sg_id
+  }
+  extra_policy_statements = [
+    {
+      effect    = "Allow"
+      actions   = ["sqs:SendMessage"]
+      resources = [aws_sqs_queue.upload_processor.arn]
     },
   ]
 }
@@ -110,6 +160,8 @@ module "api" {
     device   = module.resolver_device.function_arn
     platform = module.resolver_platform.function_arn
     user     = module.resolver_user.function_arn
+    action   = module.resolver_action.function_arn
+    upload   = module.resolver_upload.function_arn
   }
   log_retention_days  = 14
   log_field_log_level = "ERROR"
@@ -140,6 +192,14 @@ locals {
   # Secret JSON shape: {"username": "...", "password": "..."} (set by database module).
   _db_secret   = jsondecode(data.aws_secretsmanager_secret_version.db.secret_string)
   database_uri = "postgresql://${local._db_secret.username}:${local._db_secret.password}@${module.database.effective_endpoint}/fluxion"
+
+  # GH-35: SQS + S3 references consumed by action_resolver / upload_resolver (P3 wiring).
+  action_trigger_queue_arn   = aws_sqs_queue.action_trigger.arn
+  action_trigger_queue_url   = aws_sqs_queue.action_trigger.url
+  upload_processor_queue_arn = aws_sqs_queue.upload_processor.arn
+  upload_processor_queue_url = aws_sqs_queue.upload_processor.url
+  uploads_bucket_arn         = aws_s3_bucket.uploads.arn
+  uploads_bucket_name        = aws_s3_bucket.uploads.bucket
 }
 
 module "ecr" {
@@ -260,5 +320,151 @@ resource "aws_ssm_parameter" "appsync_lambda_invoke_role_arn" {
   name  = "${local.ssm_prefix}/api/lambda-invoke-role-arn"
   type  = "String"
   value = module.api.appsync_lambda_invoke_role_arn
+  tags  = local.ssm_tags
+}
+
+# ---------------------------------------------------------------------------
+# SQS — action-trigger queue + DLQ (GH-35)
+# ---------------------------------------------------------------------------
+
+resource "aws_sqs_queue" "action_trigger_dlq" {
+  name                      = "${var.resource_name_prefix}-action-trigger-dlq"
+  message_retention_seconds = 1209600 # 14 days for DLQ visibility
+  tags                      = local.ssm_tags
+}
+
+resource "aws_sqs_queue" "action_trigger" {
+  name                       = "${var.resource_name_prefix}-action-trigger-sqs"
+  visibility_timeout_seconds = 30
+  message_retention_seconds  = 345600 # 4 days
+
+  redrive_policy = jsonencode({
+    deadLetterTargetArn = aws_sqs_queue.action_trigger_dlq.arn
+    maxReceiveCount     = 5
+  })
+
+  tags = local.ssm_tags
+}
+
+# ---------------------------------------------------------------------------
+# SQS — upload-processor queue + DLQ (GH-35)
+# ---------------------------------------------------------------------------
+
+resource "aws_sqs_queue" "upload_processor_dlq" {
+  name                      = "${var.resource_name_prefix}-upload-processor-dlq"
+  message_retention_seconds = 1209600 # 14 days for DLQ visibility
+  tags                      = local.ssm_tags
+}
+
+resource "aws_sqs_queue" "upload_processor" {
+  name                       = "${var.resource_name_prefix}-upload-processor-sqs"
+  visibility_timeout_seconds = 30
+  message_retention_seconds  = 345600 # 4 days
+
+  redrive_policy = jsonencode({
+    deadLetterTargetArn = aws_sqs_queue.upload_processor_dlq.arn
+    maxReceiveCount     = 5
+  })
+
+  tags = local.ssm_tags
+}
+
+# ---------------------------------------------------------------------------
+# S3 — uploads bucket (GH-35)
+# ---------------------------------------------------------------------------
+
+resource "aws_s3_bucket" "uploads" {
+  bucket = "${var.resource_name_prefix}-uploads"
+  tags   = local.ssm_tags
+}
+
+resource "aws_s3_bucket_versioning" "uploads" {
+  bucket = aws_s3_bucket.uploads.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "uploads" {
+  bucket = aws_s3_bucket.uploads.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "uploads" {
+  bucket = aws_s3_bucket.uploads.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_ownership_controls" "uploads" {
+  bucket = aws_s3_bucket.uploads.id
+
+  rule {
+    object_ownership = "BucketOwnerEnforced"
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "uploads" {
+  bucket = aws_s3_bucket.uploads.id
+
+  rule {
+    id     = "expire-action-log-errors"
+    status = "Enabled"
+
+    filter {
+      prefix = "action-log-errors/"
+    }
+
+    expiration {
+      days = 30
+    }
+  }
+}
+
+# ---------------------------------------------------------------------------
+# SSM — SQS + S3 ARNs/URLs for downstream Lambdas (GH-35)
+# ---------------------------------------------------------------------------
+
+resource "aws_ssm_parameter" "sqs_action_trigger_arn" {
+  name  = "${local.ssm_prefix}/sqs/action-trigger-arn"
+  type  = "String"
+  value = aws_sqs_queue.action_trigger.arn
+  tags  = local.ssm_tags
+}
+
+resource "aws_ssm_parameter" "sqs_action_trigger_url" {
+  name  = "${local.ssm_prefix}/sqs/action-trigger-url"
+  type  = "String"
+  value = aws_sqs_queue.action_trigger.url
+  tags  = local.ssm_tags
+}
+
+resource "aws_ssm_parameter" "sqs_upload_processor_arn" {
+  name  = "${local.ssm_prefix}/sqs/upload-processor-arn"
+  type  = "String"
+  value = aws_sqs_queue.upload_processor.arn
+  tags  = local.ssm_tags
+}
+
+resource "aws_ssm_parameter" "sqs_upload_processor_url" {
+  name  = "${local.ssm_prefix}/sqs/upload-processor-url"
+  type  = "String"
+  value = aws_sqs_queue.upload_processor.url
+  tags  = local.ssm_tags
+}
+
+resource "aws_ssm_parameter" "s3_uploads_bucket_name" {
+  name  = "${local.ssm_prefix}/s3/uploads-bucket-name"
+  type  = "String"
+  value = aws_s3_bucket.uploads.bucket
   tags  = local.ssm_tags
 }
