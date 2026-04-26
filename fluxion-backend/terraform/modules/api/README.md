@@ -23,9 +23,8 @@ AWS AppSync GraphQL API fronting the Fluxion backend. Ticket [#33](https://githu
 | `platform` | platform-resolver | `listStates`/`listPolicies`/`listActions`/`listServices`; `updateState`/`updatePolicy`/`updateAction`/`updateService` |
 | `message_template` | message-template-resolver | `getMessageTemplate`, `listMessageTemplates`; `generateIconUploadUrl`, `createMessageTemplate`, `updateMessageTemplate`, `deleteMessageTemplate` |
 | `tac` | tac-resolver | `getTAC`, `listTACs`; `createTAC`, `updateTAC`, `deleteTAC` |
-| `action_log` | action-log-resolver | `getActionLog`, `listActionLogs`; `generateActionLogErrorReport` |
 | `user` | user-resolver | `getUser`, `listUsers`, `getCurrentUser`; `createUser`, `updateUser` |
-| `action` | action-resolver | `assignAction`, `assignBulkAction` |
+| `action` | action-resolver | `assignAction`, `assignBulkAction`; `getActionLog`, `listActionLogs`, `generateActionLogErrorReport` |
 | `upload` | upload-resolver | `uploadDevices` |
 | `chat` | chat-resolver | `getChatSession`, `listChatSessions`; `sendChatMessage` |
 
