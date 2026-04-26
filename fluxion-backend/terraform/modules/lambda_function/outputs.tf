@@ -1,11 +1,11 @@
 output "function_arn" {
   value       = aws_lambda_function.this.arn
-  description = "ARN of the Lambda function."
+  description = "Plain Lambda ARN. Use this for AppSync Lambda data sources."
 }
 
 output "invoke_arn" {
   value       = aws_lambda_function.this.invoke_arn
-  description = "Invoke ARN used by AppSync Lambda data source."
+  description = "API Gateway-formatted invoke URL (apigateway:.../path/...). Use ONLY for API Gateway integrations, NOT for AppSync."
 }
 
 output "role_arn" {
