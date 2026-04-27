@@ -18,6 +18,7 @@ Fluxion development is organized into phases, each delivering concrete business 
 | **Phase 3b** | Auth + CI/CD Pipeline | ✅ COMPLETE | 2026-04-20 | Cognito User Pool, ECR module, deploy.yml pipeline (#32) |
 | **Phase 3c** | AppSync GraphQL API | ✅ COMPLETE | 2026-04-21 | AppSync API infrastructure, schema, Cognito+IAM auth, SSM exports (#33) |
 | **Phase 4** | GraphQL Resolver Layer | ✅ COMPLETE | 2026-04-22 | 3 Lambda resolvers (device/platform/user), psycopg3+Pydantic v2, permission catalog, E2E smoke (T8 #34) |
+| **Phase 4b** | Action + Upload Resolvers | ✅ COMPLETE | 2026-04-27 | 2 Lambda resolvers (action/upload, 6 GraphQL fields), SQS x2 + DLQs, S3 uploads bucket (lifecycle 30d), CSV error report mutation (#35). Live E2E smoke validated end-to-end auth+resolver+DB chain. |
 | **Phase 5** | OEM Integration (Apple MDM) | 📋 PLANNED | 2026-05-31 | APNS push, MDM command queue, device checkin workflow |
 | **Phase 6** | Chat & Multi-Channel Messaging | 📋 PLANNED | 2026-06-30 | WebSocket chat, message templates, notification orchestration |
 | **Phase 7** | Payment Workflows (Installments) | 📋 PLANNED | 2026-07-31 | Installment contracts, lock/release FSM gates, payment provider integration |
@@ -460,6 +461,7 @@ Comprehensive testing, performance baselines, and security audit.
 
 | Version | Date | Change |
 |---------|------|--------|
+| v1.4 | 2026-04-27 | Phase 4b complete (#35): 2 Lambda resolvers (action_resolver, upload_resolver), 6 GraphQL fields, SQS x2 + DLQs, S3 uploads bucket. Live E2E smoke discovered + fixed 3 root-cause bugs latent since #33: AppSync request_template event-shape mismatch (#104), dorny/paths-filter merge-commit blindness (#106 + #108), Cognito user pool missing `custom:tenant_id` schema attribute (#110). All 22 GraphQL fields now respond correctly via JWT auth. |
 | v1.3 | 2026-04-22 | Phase 4 marked complete (T8 #34): 3 resolvers live (device, platform, user), psycopg3+Pydantic v2 stack, permission catalog seed, dev admin seed, E2E smoke tests. Updated Phase 3b → COMPLETE. |
 | v1.2 | 2026-04-21 | Added Phase 3c (T7 #33): AppSync GraphQL API infrastructure, schema, SSM exports. Updated Phase 4 dependency notes. |
 | v1.1 | 2026-04-20 | Added Phase 3b (T6 #32): Cognito auth + CI/CD; marked Phase 4 PENDING. |
