@@ -5,6 +5,11 @@ on:
     branches: [master]
   pull_request:
     branches: [master]
+  # Manual trigger — useful when a merge-commit push doesn't change any
+  # files dorny/paths-filter detects (e.g. promotion PRs that only carry
+  # changes already on master). Run via:
+  #   gh workflow run deploy.yml --ref master
+  workflow_dispatch: {}
 
 concurrency:
   # Serialize main-branch applies; PR plan runs keyed by PR so they don't block each other.
