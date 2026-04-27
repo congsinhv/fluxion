@@ -108,10 +108,16 @@ if [[ "$USER_EXISTS" == "NOT_FOUND" ]]; then
     --user-attributes \
       Name=email,Value="$DEV_ADMIN_EMAIL" \
       Name=email_verified,Value=true \
+      Name=custom:tenant_id,Value="1" \
     >/dev/null
   log "Cognito user created."
 else
-  log "Cognito user already exists — skipping create."
+  log "Cognito user already exists — ensuring custom:tenant_id attribute is set."
+  aws cognito-idp admin-update-user-attributes \
+    --user-pool-id "$USER_POOL_ID" \
+    --username "$DEV_ADMIN_EMAIL" \
+    --user-attributes Name=custom:tenant_id,Value="1" \
+    >/dev/null
 fi
 
 # ── Step 4: Set permanent password ────────────────────────────────────────────
