@@ -31,6 +31,20 @@ resource "aws_cognito_user_pool" "main" {
     }
   }
 
+  # Tenant scope claim — Lambda resolvers read event.identity.claims["custom:tenant_id"]
+  # to scope DB queries via accesscontrol.tenants lookup. Required by build_context_from
+  # in modules/_template/src/auth.py (mirrored in every resolver's auth.py).
+  schema {
+    name                = "tenant_id"
+    attribute_data_type = "String"
+    mutable             = true
+    required            = false
+    string_attribute_constraints {
+      min_length = 1
+      max_length = 32
+    }
+  }
+
   lifecycle {
     prevent_destroy = true
   }
