@@ -30,9 +30,13 @@ jobs:
     name: detect changes + enumerate modules
     runs-on: ubuntu-latest
     outputs:
-      backend: ${{ steps.filter.outputs.backend }}
-      oem: ${{ steps.filter.outputs.oem }}
-      frontend: ${{ steps.filter.outputs.frontend }}
+      # Force every domain to "true" on workflow_dispatch — dorny/paths-filter
+      # has no diff base on a manual trigger and would return all-false,
+      # making manual triggers useless. Same fallback for merge-commit pushes
+      # where paths-filter intermittently misses changes (seen on PRs #103/#105/#107).
+      backend: ${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'push') && 'true' || steps.filter.outputs.backend }}
+      oem: ${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'push') && 'true' || steps.filter.outputs.oem }}
+      frontend: ${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'push') && 'true' || steps.filter.outputs.frontend }}
       backend_modules: ${{ steps.list-modules.outputs.backend }}
       oem_modules: ${{ steps.list-modules.outputs.oem }}
     steps:
