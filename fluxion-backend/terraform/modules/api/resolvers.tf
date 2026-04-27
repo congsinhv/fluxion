@@ -9,7 +9,12 @@ resource "aws_appsync_resolver" "unit" {
   field       = each.value.field_name
   data_source = aws_appsync_datasource.lambda[each.value.resolver].name
 
-  # Classic AppSync Lambda invocation template.
+  # Classic AppSync Lambda invocation template — uses the AWS standard
+  # event shape so Lambda dispatchers can read event["info"]["fieldName"].
+  # The original (field/typeName) shape was non-standard and the Lambda
+  # dispatchers in fluxion-backend/modules/*/src/handler.py don't read it,
+  # so every resolver silently raised UnknownFieldError. Replaced with
+  # info{} to match `aws_lambda_powertools` / standard direct-resolver shape.
   # $util.* and $ctx.* are VTL — Terraform leaves them alone because they
   # don't use the ${...} interpolation syntax.
   request_template = <<-EOT
@@ -17,8 +22,10 @@ resource "aws_appsync_resolver" "unit" {
       "version": "2018-05-29",
       "operation": "Invoke",
       "payload": {
-        "field": "${each.value.field_name}",
-        "typeName": "${each.value.type_name}",
+        "info": {
+          "fieldName": "${each.value.field_name}",
+          "parentTypeName": "${each.value.type_name}"
+        },
         "arguments": $util.toJson($ctx.args),
         "identity": $util.toJson($ctx.identity),
         "source": $util.toJson($ctx.source),
