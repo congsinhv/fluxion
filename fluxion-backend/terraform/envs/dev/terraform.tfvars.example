@@ -1,4 +1,0 @@
-aws_region           = "ap-southeast-1"
-env                  = "dev"
-resource_name_prefix = "fluxion-dev"
-enable_rds_proxy     = false
